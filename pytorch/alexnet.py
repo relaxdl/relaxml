@@ -1,4 +1,4 @@
-from typing import Tuple, List
+from typing import Tuple, List, Union
 import time
 import sys
 import torch
@@ -96,7 +96,7 @@ def alexnet() -> nn.Module:
 
 def load_data_fashion_mnist(
         batch_size: int,
-        resize: int = None,
+        resize: Union[int, Tuple[int, int]] = None,
         root: str = '../data') -> Tuple[DataLoader, DataLoader]:
     """
     下载Fashion-MNIST数据集, 然后将其加载到内存中

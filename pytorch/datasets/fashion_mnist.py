@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Union
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 
 def load_data_fashion_mnist(
         batch_size: int,
-        resize: int = None,
+        resize: Union[int, Tuple[int, int]] = None,
         root: str = '../data') -> Tuple[DataLoader, DataLoader]:
     """
     下载Fashion-MNIST数据集, 然后将其加载到内存中
