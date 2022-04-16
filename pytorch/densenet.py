@@ -26,6 +26,18 @@ def conv_block(input_channels: int, num_channels: int) -> nn.Module:
 
 
 class DenseBlock(nn.Module):
+    """
+    实现DenseBlock
+
+    定义一个有2个输出通道数为10的DenseBlock. 使用通道数为3的输入时, 会得到通道数
+    为3+2x10=23的输出. 卷积块的通道数控制了输出通道数相对于输入通道数的增长, 因此
+    也被称为增长率(growth rate)
+
+    >>> blk = DenseBlock(2, 3, 10)
+    >>> X = torch.rand(4, 3, 8, 8)
+    >>> Y = blk(X)
+    >>> assert Y.shape == (4, 23, 8, 8)
+    """
 
     def __init__(self, num_convs: int, input_channels: int,
                  num_channels: int) -> None:
@@ -45,6 +57,13 @@ class DenseBlock(nn.Module):
 
 
 def transition_block(input_channels: int, num_channels: int) -> None:
+    """
+    实现过渡层
+
+    >>> X = torch.rand(4, 23, 8, 8)
+    >>> blk = transition_block(23, 10)
+    >>> assert blk(X).shape == (4, 10, 4, 4)
+    """
     return nn.Sequential(
         nn.BatchNorm2d(input_channels), nn.ReLU(),
         nn.Conv2d(input_channels, num_channels, kernel_size=1),
