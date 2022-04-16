@@ -1,6 +1,6 @@
 from typing import Tuple, List, Union
-import time
 import sys
+import time
 import torch
 from torch import Tensor
 import torchvision
@@ -11,78 +11,94 @@ from torch.optim.optimizer import Optimizer
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 """
-实现AlexNet
+实现VGG
 
 实现说明:
-https://tech.foxrelax.com/classics_net/alexnet/
+https://tech.foxrelax.com/classics_net/vgg/
 """
 
 
-def alexnet() -> nn.Module:
+def vgg_block(num_convs: int, in_channels: int,
+              out_channels: int) -> nn.Module:
     """
-    实现AlexNet
+    VGG Block
+    
+    数据经过vgg block, 高和宽会减半
 
+    参数:
+    num_convs: 卷积层的数量
+    in_channels: 输入通道数
+    out_channels: 输出通道数
+    """
+    layers = []
+    # 高宽不变
+    for _ in range(num_convs):
+        layers.append(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1))
+        layers.append(nn.ReLU())
+        in_channels = out_channels
+
+    # 高宽减半
+    layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
+    return nn.Sequential(*layers)
+
+
+def vgg(conv_arch: Tuple[Tuple[int, int]] = None, ratio: int = 1) -> nn.Module:
+    """
+    VGG
+
+    VGG的默认Conv Arch为:
+    ((1, 64), (1, 128), (2, 256), (2, 512), (2, 512))
+    * 第一个数表示: `num_convs`, 也就是每个vgg block卷积层的数量
+    * 第二个数表示: `out_channels`, 这个vgg block输出通道数
+
+    由于模型参数比较多, 我们可以设置一个ratio来缩小其网络规模
+
+    标准规模的VGG网络
     >>> x = torch.randn((256, 1, 224, 224))
-    >>> net = alexnet()
+    >>> net = vgg()
     >>> assert net(x).shape == (256, 10)
 
-    输入:
-    x.shape: [batch_size, 1, 224, 224)
-
-    输出:
-    output.shape: [batch_size, 10]
+    Mini的VGG网络(参数少, 训练速度快)
+    >>> x = torch.randn((256, 1, 224, 224))
+    >>> net = vgg(ratio=4)
+    >>> assert net(x).shape == (256, 10)
     """
+    if conv_arch is None:
+        conv_arch = ((1, 64), (1, 128), (2, 256), (2, 512), (2, 512))
+
+    conv_arch = [(pair[0], pair[1] // ratio) for pair in conv_arch]
+
+    vgg_blks = []
+    in_channels = 1
+    for (num_convs, out_channels) in conv_arch:
+        vgg_blks.append(vgg_block(num_convs, in_channels, out_channels))
+        in_channels = out_channels
+
     net = nn.Sequential(
-        # 这里, 我们使用一个11*11的更大窗口来捕捉对象
-        # 同时, 步幅为4, 以减少输出的高度和宽度
-        # 另外, 输出通道的数目远大于LeNet
-        # output [1, 96, 54, 54]
-        nn.Conv2d(1, 96, kernel_size=11, stride=4, padding=1),
-        # output [1, 96, 54, 54]
-        nn.ReLU(),
-        # output [1, 96, 26, 26]
-        nn.MaxPool2d(kernel_size=3, stride=2),
-        # 减小卷积窗口, 使用填充为2来使得输入与输出的高和宽一致, 且增大输出通道数
-        # output [1, 256, 26, 26]
-        nn.Conv2d(96, 256, kernel_size=5, padding=2),
-        # output [1, 256, 26, 26]
-        nn.ReLU(),
-        # output [1, 256, 12, 12]
-        nn.MaxPool2d(kernel_size=3, stride=2),
-        # 使用三个连续的卷积层和较小的卷积窗口
-        # 除了最后的卷积层, 输出通道的数量进一步增加
-        # 在前两个卷积层之后, 池化层不用于减少输入的高度和宽度
-        # output [1, 384, 12, 12]
-        nn.Conv2d(256, 384, kernel_size=3, padding=1),
-        # output [1, 384, 12, 12]
-        nn.ReLU(),
-        # output [1, 384, 12, 12]
-        nn.Conv2d(384, 384, kernel_size=3, padding=1),
-        # output [1, 384, 12, 12]
-        nn.ReLU(),
-        # output [1, 256, 12, 12]
-        nn.Conv2d(384, 256, kernel_size=3, padding=1),
-        # output [1, 256, 12, 12]
-        nn.ReLU(),
-        # output [1, 256, 5, 5]
-        nn.MaxPool2d(kernel_size=3, stride=2),
-        # output [1, 6400]
+        # input   [batch_size, 1, 224, 224]
+        # block1  [batch_size, 64, 112, 112]
+        # block2  [batch_size, 128, 56, 56]
+        # block3  [batch_size, 256, 28, 28]
+        # block4  [batch_size, 512, 14, 14]
+        # block5  [batch_size, 512, 7, 7]
+        *vgg_blks,
+        # output [batch_size, 25088]
         nn.Flatten(),
-        # 这里全连接层的输出数量是LeNet中的好几倍. 使用dropout层来减轻过度拟合
-        # output [1, 4096]
-        nn.Linear(6400, 4096),
-        # output [1, 4096]
+        # 全连接层部分
+        # output [batch_size, 4096]
+        nn.Linear(out_channels * 7 * 7, 4096),
+        # output [batch_size, 4096]
         nn.ReLU(),
-        # output [1, 4096]
-        nn.Dropout(p=0.5),
-        # output [1, 4096]
+        # output [batch_size, 4096]
+        nn.Dropout(0.5),
+        # output [batch_size, 4096]
         nn.Linear(4096, 4096),
-        # output [1, 4096]
+        # output [batch_size, 4096]
         nn.ReLU(),
-        # output [1, 4096]
-        nn.Dropout(p=0.5),
-        # 最后是输出层. 由于这里使用Fashion-MNIST, 所以用类别数为10, 而非论文中的1000
-        # output [1, 10]
+        # output [batch_size, 4096]
+        nn.Dropout(0.5),
+        # output [batch_size, 10]
         nn.Linear(4096, 10))
 
     def init_weights(m):
@@ -238,11 +254,11 @@ def plot_history(
 def run() -> None:
     train_iter, test_iter = load_data_fashion_mnist(batch_size=256,
                                                     resize=(224, 224))
-    net = alexnet()
+    net = vgg(ratio=4)
     kwargs = {
         'num_epochs': 10,
         'loss': nn.CrossEntropyLoss(reduction='mean'),
-        'optimizer': torch.optim.SGD(net.parameters(), lr=0.01)
+        'optimizer': torch.optim.SGD(net.parameters(), lr=0.05)
     }
     history = train_gpu(net, train_iter, test_iter, **kwargs)
     plot_history(history)
@@ -251,25 +267,25 @@ def run() -> None:
 if __name__ == '__main__':
     run()
 # training on cuda
-# epoch 0, step 235, train loss 1.783, train acc 0.350: 100%|██████████| 235/235 [00:58<00:00,  3.99it/s]
-# epoch 0, step 235, train loss 1.783, train acc 0.350, test acc 0.624
-# epoch 1, step 235, train loss 0.840, train acc 0.683: 100%|██████████| 235/235 [00:58<00:00,  4.01it/s]
-# epoch 1, step 235, train loss 0.840, train acc 0.683, test acc 0.717
-# epoch 2, step 235, train loss 0.675, train acc 0.748: 100%|██████████| 235/235 [00:58<00:00,  4.01it/s]
-# epoch 2, step 235, train loss 0.675, train acc 0.748, test acc 0.783
-# epoch 3, step 235, train loss 0.587, train acc 0.781: 100%|██████████| 235/235 [00:58<00:00,  4.02it/s]
-# epoch 3, step 235, train loss 0.587, train acc 0.781, test acc 0.806
-# epoch 4, step 235, train loss 0.535, train acc 0.801: 100%|██████████| 235/235 [00:58<00:00,  4.02it/s]
-# epoch 4, step 235, train loss 0.535, train acc 0.801, test acc 0.806
-# epoch 5, step 235, train loss 0.494, train acc 0.817: 100%|██████████| 235/235 [00:58<00:00,  4.03it/s]
-# epoch 5, step 235, train loss 0.494, train acc 0.817, test acc 0.793
-# epoch 6, step 235, train loss 0.464, train acc 0.829: 100%|██████████| 235/235 [00:58<00:00,  4.00it/s]
-# epoch 6, step 235, train loss 0.464, train acc 0.829, test acc 0.841
-# epoch 7, step 235, train loss 0.439, train acc 0.839: 100%|██████████| 235/235 [00:58<00:00,  4.01it/s]
-# epoch 7, step 235, train loss 0.439, train acc 0.839, test acc 0.836
-# epoch 8, step 235, train loss 0.419, train acc 0.846: 100%|██████████| 235/235 [00:58<00:00,  4.01it/s]
-# epoch 8, step 235, train loss 0.419, train acc 0.846, test acc 0.856
-# epoch 9, step 235, train loss 0.401, train acc 0.854: 100%|██████████| 235/235 [00:58<00:00,  4.01it/s]
-# epoch 9, step 235, train loss 0.401, train acc 0.854, test acc 0.858
-# train loss 0.401, train acc 0.854, test acc 0.858
-# 1740.5 examples/sec on cuda
+# epoch 0, step 235, train loss 1.594, train acc 0.416: 100%|██████████| 235/235 [01:50<00:00,  2.12it/s]
+# epoch 0, step 235, train loss 1.594, train acc 0.416, test acc 0.776
+# epoch 1, step 235, train loss 0.521, train acc 0.805: 100%|██████████| 235/235 [01:50<00:00,  2.12it/s]
+# epoch 1, step 235, train loss 0.521, train acc 0.805, test acc 0.802
+# epoch 2, step 235, train loss 0.406, train acc 0.851: 100%|██████████| 235/235 [01:51<00:00,  2.11it/s]
+# epoch 2, step 235, train loss 0.406, train acc 0.851, test acc 0.863
+# epoch 3, step 235, train loss 0.350, train acc 0.871: 100%|██████████| 235/235 [01:50<00:00,  2.12it/s]
+# epoch 3, step 235, train loss 0.350, train acc 0.871, test acc 0.876
+# epoch 4, step 235, train loss 0.317, train acc 0.884: 100%|██████████| 235/235 [01:51<00:00,  2.11it/s]
+# epoch 4, step 235, train loss 0.317, train acc 0.884, test acc 0.876
+# epoch 5, step 235, train loss 0.290, train acc 0.894: 100%|██████████| 235/235 [01:51<00:00,  2.11it/s]
+# epoch 5, step 235, train loss 0.290, train acc 0.894, test acc 0.896
+# epoch 6, step 235, train loss 0.270, train acc 0.902: 100%|██████████| 235/235 [01:50<00:00,  2.12it/s]
+# epoch 6, step 235, train loss 0.270, train acc 0.902, test acc 0.898
+# epoch 7, step 235, train loss 0.256, train acc 0.907: 100%|██████████| 235/235 [01:51<00:00,  2.11it/s]
+# epoch 7, step 235, train loss 0.256, train acc 0.907, test acc 0.894
+# epoch 8, step 235, train loss 0.240, train acc 0.911: 100%|██████████| 235/235 [01:51<00:00,  2.12it/s]
+# epoch 8, step 235, train loss 0.240, train acc 0.911, test acc 0.886
+# epoch 9, step 235, train loss 0.226, train acc 0.916: 100%|██████████| 235/235 [01:50<00:00,  2.12it/s]
+# epoch 9, step 235, train loss 0.226, train acc 0.916, test acc 0.887
+# train loss 0.226, train acc 0.916, test acc 0.887
+# 695.0 examples/sec on cuda
