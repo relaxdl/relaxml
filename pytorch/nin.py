@@ -20,6 +20,9 @@ https://tech.foxrelax.com/classics_net/nin/
 
 def nin_block(in_channels: int, out_channels: int, kernel_size: int,
               stride: int, padding: int) -> nn.Module:
+    """
+    实现NiN Block
+    """
     return nn.Sequential(
         nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding),
         nn.ReLU(), nn.Conv2d(out_channels, out_channels, kernel_size=1),
@@ -220,7 +223,7 @@ def run() -> None:
                                                     resize=(224, 224))
     net = nin()
     kwargs = {
-        'num_epochs': 10,
+        'num_epochs': 20,
         'loss': nn.CrossEntropyLoss(reduction='mean'),
         'optimizer': torch.optim.SGD(net.parameters(), lr=0.1)
     }
@@ -231,25 +234,25 @@ def run() -> None:
 if __name__ == '__main__':
     run()
 # training on cuda
-# epoch 0, step 235, train loss 2.303, train acc 0.102: 100%|██████████| 235/235 [01:20<00:00,  2.91it/s]
-# epoch 0, step 235, train loss 2.303, train acc 0.102, test acc 0.100
-# epoch 1, step 235, train loss 2.302, train acc 0.122: 100%|██████████| 235/235 [01:21<00:00,  2.88it/s]
-# epoch 1, step 235, train loss 2.302, train acc 0.122, test acc 0.199
-# epoch 2, step 235, train loss 2.287, train acc 0.172: 100%|██████████| 235/235 [01:21<00:00,  2.88it/s]
-# epoch 2, step 235, train loss 2.287, train acc 0.172, test acc 0.193
-# epoch 3, step 235, train loss 2.193, train acc 0.215: 100%|██████████| 235/235 [01:21<00:00,  2.87it/s]
-# epoch 3, step 235, train loss 2.193, train acc 0.215, test acc 0.380
-# epoch 4, step 235, train loss 1.596, train acc 0.424: 100%|██████████| 235/235 [01:21<00:00,  2.88it/s]
-# epoch 4, step 235, train loss 1.596, train acc 0.424, test acc 0.580
-# epoch 5, step 235, train loss 1.142, train acc 0.550: 100%|██████████| 235/235 [01:21<00:00,  2.88it/s]
-# epoch 5, step 235, train loss 1.142, train acc 0.550, test acc 0.575
-# epoch 6, step 235, train loss 0.852, train acc 0.679: 100%|██████████| 235/235 [01:22<00:00,  2.86it/s]
-# epoch 6, step 235, train loss 0.852, train acc 0.679, test acc 0.725
-# epoch 7, step 235, train loss 0.837, train acc 0.697: 100%|██████████| 235/235 [01:21<00:00,  2.87it/s]
-# epoch 7, step 235, train loss 0.837, train acc 0.697, test acc 0.625
-# epoch 8, step 235, train loss 0.648, train acc 0.756: 100%|██████████| 235/235 [01:21<00:00,  2.87it/s]
-# epoch 8, step 235, train loss 0.648, train acc 0.756, test acc 0.745
-# epoch 9, step 235, train loss 0.561, train acc 0.788: 100%|██████████| 235/235 [01:21<00:00,  2.88it/s]
-# epoch 9, step 235, train loss 0.561, train acc 0.788, test acc 0.785
-# train loss 0.561, train acc 0.788, test acc 0.785
-# 1055.0 examples/sec on cuda
+# epoch 0, step 235, train loss 2.302, train acc 0.106: 100%|██████████| 235/235 [01:18<00:00,  3.01it/s]
+# epoch 0, step 235, train loss 2.302, train acc 0.106, test acc 0.104
+# epoch 1, step 235, train loss 2.253, train acc 0.162: 100%|██████████| 235/235 [01:19<00:00,  2.96it/s]
+# epoch 1, step 235, train loss 2.253, train acc 0.162, test acc 0.113
+# epoch 2, step 235, train loss 1.699, train acc 0.379: 100%|██████████| 235/235 [01:20<00:00,  2.93it/s]
+# epoch 2, step 235, train loss 1.699, train acc 0.379, test acc 0.516
+# epoch 3, step 235, train loss 1.037, train acc 0.597: 100%|██████████| 235/235 [01:20<00:00,  2.92it/s]
+# epoch 3, step 235, train loss 1.037, train acc 0.597, test acc 0.637
+# epoch 4, step 235, train loss 0.822, train acc 0.697: 100%|██████████| 235/235 [01:21<00:00,  2.89it/s]
+# epoch 4, step 235, train loss 0.822, train acc 0.697, test acc 0.728
+# epoch 5, step 235, train loss 0.652, train acc 0.756: 100%|██████████| 235/235 [01:20<00:00,  2.90it/s]
+# epoch 5, step 235, train loss 0.652, train acc 0.756, test acc 0.725
+# epoch 6, step 235, train loss 0.743, train acc 0.731: 100%|██████████| 235/235 [01:20<00:00,  2.91it/s]
+# epoch 6, step 235, train loss 0.743, train acc 0.731, test acc 0.782
+# epoch 7, step 235, train loss 0.525, train acc 0.806: 100%|██████████| 235/235 [01:20<00:00,  2.90it/s]
+# epoch 7, step 235, train loss 0.525, train acc 0.806, test acc 0.803
+# epoch 8, step 235, train loss 0.484, train acc 0.822: 100%|██████████| 235/235 [01:20<00:00,  2.91it/s]
+# epoch 8, step 235, train loss 0.484, train acc 0.822, test acc 0.838
+# epoch 9, step 235, train loss 0.456, train acc 0.832: 100%|██████████| 235/235 [01:21<00:00,  2.89it/s]
+# epoch 9, step 235, train loss 0.456, train acc 0.832, test acc 0.830
+# train loss 0.456, train acc 0.832, test acc 0.830
+# 1066.3 examples/sec on cuda
