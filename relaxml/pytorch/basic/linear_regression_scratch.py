@@ -99,7 +99,7 @@ def train(true_w: Tensor, true_b: Tensor) -> Tuple[Tensor, Tensor]:
     for epoch in range(num_epochs):
         for X, y in data_iter(batch_size, features, labels):
             l = loss(net(X, w, b), y)
-            l.sum().backward()
+            l.sum().backward()  # 计算loss sum, sgd里面会自动除以batch_size
             sgd([w, b], lr, batch_size)
         with torch.no_grad():
             train_l = loss(net(features, w, b), labels)

@@ -69,7 +69,7 @@ def train(true_w: Tensor, true_b: Tensor) -> Tuple[Tensor, Tensor]:
     """
     num_epochs, lr, batch_size = 3, 0.03, 10
     net = linreg()
-    loss = nn.MSELoss()
+    loss = nn.MSELoss(reduction='mean')
     trainer = torch.optim.SGD(net.parameters(), lr=lr)
     features, labels = synthetic_data(true_w, true_b, 1000)
     for epoch in range(num_epochs):
