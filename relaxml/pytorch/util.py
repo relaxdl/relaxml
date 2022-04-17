@@ -6,7 +6,6 @@ from torch import Tensor
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim.optimizer import Optimizer
-import torchvision
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
@@ -114,18 +113,3 @@ def plot_history(
     plt.grid()
     plt.legend()
     plt.show()
-
-
-def val_classify(num_classes, train_iter, test_iter):
-    net = torchvision.models.resnet18(pretrained=True)
-    # 替换model.fc:
-    # (fc): Linear(in_features=512, out_features=1000, bias=True)
-    net.fn = torch.nn.Linear(net.fc.in_features, num_classes)
-    kwargs = {
-        'num_epochs': 10,
-        'loss': nn.CrossEntropyLoss(reduction='mean'),
-        'optimizer': torch.optim.SGD(net.parameters(), lr=0.01),
-        'save_path': '../data/resnet18_val_classify.pth'
-    }
-    history = train_gpu(net, train_iter, test_iter, **kwargs)
-    plot_history(history)
