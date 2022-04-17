@@ -11,10 +11,10 @@ from torch.optim.optimizer import Optimizer
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 """
-softmax回归简洁实现
+多层感知机(MLP)简洁实现
 
 说明:
-https://tech.foxrelax.com/basic/softmax_regression/
+https://tech.foxrelax.com/basic/mlp/
 """
 
 
@@ -55,7 +55,8 @@ def load_data_fashion_mnist(
 
 
 def net() -> nn.Module:
-    net = nn.Sequential(nn.Flatten(), nn.Linear(784, 10))
+    net = nn.Sequential(nn.Flatten(), nn.Linear(784, 256), nn.ReLU(),
+                        nn.Linear(256, 10))
 
     def init_weights(m):
         if type(m) == nn.Linear:

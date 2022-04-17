@@ -1,4 +1,5 @@
 from typing import Tuple, Union, List
+from functools import partial
 import sys
 import time
 import torch
@@ -11,10 +12,10 @@ from torch.optim.optimizer import Optimizer
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 """
-softmax回归简洁实现
+多层感知机(MLP)从零实现
 
 说明:
-https://tech.foxrelax.com/basic/softmax_regression/
+https://tech.foxrelax.com/basic/mlp/
 """
 
 
@@ -54,15 +55,34 @@ def load_data_fashion_mnist(
             DataLoader(mnist_test, batch_size, shuffle=False))
 
 
-def net() -> nn.Module:
-    net = nn.Sequential(nn.Flatten(), nn.Linear(784, 10))
+def gen_params(num_inputs: int = 784,
+               num_outputs: int = 10,
+               num_hiddens: int = 256) -> List[Tensor]:
+    """
+    生成模型参数: [w1, b1, w2, b2]
+    """
+    num_inputs, num_outputs, num_hiddens = 784, 10, 256
 
-    def init_weights(m):
-        if type(m) == nn.Linear:
-            nn.init.normal_(m.weight, std=0.01)
+    W1 = nn.Parameter(
+        torch.randn(num_inputs, num_hiddens, requires_grad=True) * 0.01)
+    b1 = nn.Parameter(torch.zeros(num_hiddens, requires_grad=True))
+    W2 = nn.Parameter(
+        torch.randn(num_hiddens, num_outputs, requires_grad=True) * 0.01)
+    b2 = nn.Parameter(torch.zeros(num_outputs, requires_grad=True))
+    params = [W1, b1, W2, b2]
+    return params
 
-    net.apply(init_weights)
-    return net
+
+def relu(X: Tensor) -> Tensor:
+    a = torch.zeros_like(X)
+    return torch.max(X, a)
+
+
+def net(params: List[Tensor], X: Tensor, num_inputs: int = 784) -> Tensor:
+    [W1, b1, W2, b2] = params
+    X = X.reshape((-1, num_inputs))
+    H = relu(X @ W1 + b1)
+    return (H @ W2 + b2)
 
 
 def accuracy(y_hat: Tensor, y: Tensor) -> Tensor:
@@ -78,28 +98,12 @@ def accuracy(y_hat: Tensor, y: Tensor) -> Tensor:
     return cmp.type(y.dtype).sum()
 
 
-def train_gpu(net: nn.Module,
-              train_iter: DataLoader,
-              test_iter: DataLoader,
-              num_epochs: int = 10,
-              loss: nn.Module = None,
-              optimizer: Optimizer = None,
-              device: torch.device = None,
-              verbose: bool = False,
-              save_path: str = None) -> List[List[Tuple[int, float]]]:
-    """
-    用GPU训练模型
-    """
-    if device is None:
-        device = torch.device(
-            'cuda') if torch.cuda.is_available() else torch.device('cpu')
-
-    print('training on', device)
-    net.to(device)
-    if loss is None:
-        loss = nn.CrossEntropyLoss(reduction='mean')
-    if optimizer is None:
-        optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
+def train(net: nn.Module,
+          train_iter: DataLoader,
+          test_iter: DataLoader,
+          num_epochs: int = 10,
+          loss: nn.Module = None,
+          optimizer: Optimizer = None) -> List[List[Tuple[int, float]]]:
     times = []
     history = [[], [], []]  # 记录: 训练集损失, 训练集准确率, 测试集准确率, 方便后续绘图
     num_batches = len(train_iter)
@@ -107,12 +111,10 @@ def train_gpu(net: nn.Module,
     for epoch in range(num_epochs):
         # 训练
         metric_train = [0.0] * 3  # 统计: 训练集损失之和, 训练集准确数量之和, 训练集样本数量之和
-        net.train()
         train_iter_tqdm = tqdm(train_iter, file=sys.stdout)
         for i, (X, y) in enumerate(train_iter_tqdm):
             t_start = time.time()
             optimizer.zero_grad()
-            X, y = X.to(device), y.to(device)
             y_hat = net(X)
             l = loss(y_hat, y)
             l.backward()
@@ -131,24 +133,20 @@ def train_gpu(net: nn.Module,
 
         # 评估
         metric_test = [0.0] * 2  # 测试准确数量之和, 测试样本数量之和
-        net.eval()
         with torch.no_grad():
             for X, y in test_iter:
-                X, y = X.to(device), y.to(device)
                 metric_test[0] += float(accuracy(net(X), y))
                 metric_test[1] += float(X.shape[0])
             test_acc = metric_test[0] / metric_test[1]
             history[2].append((epoch + 1, test_acc))
             print(f'epoch {epoch}, step {i+1}, train loss {train_loss:.3f}, '
                   f'train acc {train_acc:.3f}, test acc {test_acc:.3f}')
-            if test_acc > best_test_acc and save_path:
+            if test_acc > best_test_acc:
                 best_test_acc = test_acc
-                torch.save(net.state_dict(), save_path)
 
     print(f'train loss {train_loss:.3f}, train acc {train_acc:.3f}, '
           f'test acc {test_acc:.3f}')
-    print(f'{metric_train[2] * num_epochs / sum(times):.1f} '
-          f'examples/sec on {str(device)}')
+    print(f'{metric_train[2] * num_epochs / sum(times):.1f} examples/sec')
     return history
 
 
@@ -172,13 +170,14 @@ def plot_history(
 
 def run() -> None:
     train_iter, test_iter = load_data_fashion_mnist(batch_size=256)
-    _net = net()
+    params = gen_params()
+    _net = partial(net, params)
     kwargs = {
         'num_epochs': 10,
         'loss': nn.CrossEntropyLoss(reduction='mean'),
-        'optimizer': torch.optim.SGD(_net.parameters(), lr=0.1)
+        'optimizer': torch.optim.SGD(params, lr=0.1)
     }
-    history = train_gpu(_net, train_iter, test_iter, **kwargs)
+    history = train(_net, train_iter, test_iter, **kwargs)
     plot_history(history)
 
 
