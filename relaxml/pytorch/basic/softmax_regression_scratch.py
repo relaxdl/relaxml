@@ -12,7 +12,7 @@ from tqdm import tqdm
 softmax回归从零实现
 
 说明:
-https://tech.foxrelax.com/basic/softmax_regression/
+https://tech.foxrelax.com/basic/softmax_regression_scratch/
 """
 
 

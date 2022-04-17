@@ -6,7 +6,7 @@ from torch import Tensor
 线性回归从零实现
 
 说明:
-https://tech.foxrelax.com/basic/linear_regression/
+https://tech.foxrelax.com/basic/linear_regression_scratch/
 """
 
 

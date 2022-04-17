@@ -14,7 +14,7 @@ from tqdm import tqdm
 softmax回归简洁实现
 
 说明:
-https://tech.foxrelax.com/basic/softmax_regression/
+https://tech.foxrelax.com/basic/softmax_regression_concise/
 """
 
 

@@ -7,7 +7,7 @@ from torch.utils.data import TensorDataset, DataLoader
 线性回归简洁实现
 
 说明:
-https://tech.foxrelax.com/basic/linear_regression/
+https://tech.foxrelax.com/basic/linear_regression_concise/
 """
 
 

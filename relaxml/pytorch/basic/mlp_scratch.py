@@ -12,10 +12,10 @@ from torch.optim.optimizer import Optimizer
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 """
-多层感知机(MLP)从零实现
+MLP从零实现
 
 说明:
-https://tech.foxrelax.com/basic/mlp/
+https://tech.foxrelax.com/basic/mlp_scratch/
 """
 
 
