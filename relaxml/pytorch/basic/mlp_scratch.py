@@ -183,3 +183,24 @@ def run() -> None:
 
 if __name__ == '__main__':
     run()
+# epoch 0, step 235, train loss 1.039, train acc 0.644: 100%|█████████████████████████████| 235/235 [00:01<00:00, 147.25it/s]
+# epoch 0, step 235, train loss 1.039, train acc 0.644, test acc 0.691
+# epoch 1, step 235, train loss 0.600, train acc 0.789: 100%|█████████████████████████████| 235/235 [00:01<00:00, 155.09it/s]
+# epoch 1, step 235, train loss 0.600, train acc 0.789, test acc 0.791
+# epoch 2, step 235, train loss 0.520, train acc 0.817: 100%|█████████████████████████████| 235/235 [00:01<00:00, 151.21it/s]
+# epoch 2, step 235, train loss 0.520, train acc 0.817, test acc 0.817
+# epoch 3, step 235, train loss 0.481, train acc 0.832: 100%|█████████████████████████████| 235/235 [00:01<00:00, 152.22it/s]
+# epoch 3, step 235, train loss 0.481, train acc 0.832, test acc 0.827
+# epoch 4, step 235, train loss 0.455, train acc 0.841: 100%|█████████████████████████████| 235/235 [00:01<00:00, 148.51it/s]
+# epoch 4, step 235, train loss 0.455, train acc 0.841, test acc 0.828
+# epoch 5, step 235, train loss 0.434, train acc 0.848: 100%|█████████████████████████████| 235/235 [00:01<00:00, 146.75it/s]
+# epoch 5, step 235, train loss 0.434, train acc 0.848, test acc 0.833
+# epoch 6, step 235, train loss 0.419, train acc 0.853: 100%|█████████████████████████████| 235/235 [00:01<00:00, 152.08it/s]
+# epoch 6, step 235, train loss 0.419, train acc 0.853, test acc 0.834
+# epoch 7, step 235, train loss 0.407, train acc 0.857: 100%|█████████████████████████████| 235/235 [00:01<00:00, 149.18it/s]
+# epoch 7, step 235, train loss 0.407, train acc 0.857, test acc 0.843
+# epoch 8, step 235, train loss 0.393, train acc 0.861: 100%|█████████████████████████████| 235/235 [00:01<00:00, 140.99it/s]
+# epoch 8, step 235, train loss 0.393, train acc 0.861, test acc 0.848
+# epoch 9, step 235, train loss 0.383, train acc 0.864: 100%|█████████████████████████████| 235/235 [00:01<00:00, 149.43it/s]
+# epoch 9, step 235, train loss 0.383, train acc 0.864, test acc 0.847
+# train loss 0.383, train acc 0.864, test acc 0.847

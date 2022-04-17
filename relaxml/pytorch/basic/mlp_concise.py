@@ -185,3 +185,24 @@ def run() -> None:
 
 if __name__ == '__main__':
     run()
+# epoch 0, step 235, train loss 1.046, train acc 0.635: 100%|███████████████████████████████████████| 235/235 [00:01<00:00, 127.15it/s]
+# epoch 0, step 235, train loss 1.046, train acc 0.635, test acc 0.759
+# epoch 1, step 235, train loss 0.603, train acc 0.788: 100%|███████████████████████████████████████| 235/235 [00:01<00:00, 138.25it/s]
+# epoch 1, step 235, train loss 0.603, train acc 0.788, test acc 0.778
+# epoch 2, step 235, train loss 0.520, train acc 0.818: 100%|███████████████████████████████████████| 235/235 [00:01<00:00, 151.96it/s]
+# epoch 2, step 235, train loss 0.520, train acc 0.818, test acc 0.810
+# epoch 3, step 235, train loss 0.482, train acc 0.831: 100%|███████████████████████████████████████| 235/235 [00:01<00:00, 155.43it/s]
+# epoch 3, step 235, train loss 0.482, train acc 0.831, test acc 0.812
+# epoch 4, step 235, train loss 0.453, train acc 0.841: 100%|███████████████████████████████████████| 235/235 [00:01<00:00, 155.30it/s]
+# epoch 4, step 235, train loss 0.453, train acc 0.841, test acc 0.835
+# epoch 5, step 235, train loss 0.435, train acc 0.847: 100%|███████████████████████████████████████| 235/235 [00:01<00:00, 155.41it/s]
+# epoch 5, step 235, train loss 0.435, train acc 0.847, test acc 0.827
+# epoch 6, step 235, train loss 0.419, train acc 0.852: 100%|███████████████████████████████████████| 235/235 [00:01<00:00, 155.20it/s]
+# epoch 6, step 235, train loss 0.419, train acc 0.852, test acc 0.835
+# epoch 7, step 235, train loss 0.405, train acc 0.857: 100%|███████████████████████████████████████| 235/235 [00:01<00:00, 155.00it/s]
+# epoch 7, step 235, train loss 0.405, train acc 0.857, test acc 0.843
+# epoch 8, step 235, train loss 0.392, train acc 0.861: 100%|███████████████████████████████████████| 235/235 [00:01<00:00, 155.20it/s]
+# epoch 8, step 235, train loss 0.392, train acc 0.861, test acc 0.838
+# epoch 9, step 235, train loss 0.383, train acc 0.864: 100%|███████████████████████████████████████| 235/235 [00:01<00:00, 155.69it/s]
+# epoch 9, step 235, train loss 0.383, train acc 0.864, test acc 0.840
+# train loss 0.383, train acc 0.864, test acc 0.840
