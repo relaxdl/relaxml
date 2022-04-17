@@ -2,6 +2,12 @@ import torch
 from typing import Callable, List, Tuple
 from torch import Tensor
 import matplotlib.pyplot as plt
+"""
+激活函数
+
+说明:
+https://tech.foxrelax.com/mlutil/activation/
+"""
 
 
 def plot_activation(activation: Callable,

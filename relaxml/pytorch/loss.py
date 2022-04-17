@@ -3,6 +3,12 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 import matplotlib.pyplot as plt
+"""
+损失函数
+
+说明:
+https://tech.foxrelax.com/mlutil/loss/
+"""
 
 
 def plot_regression_loss(loss: Callable,
