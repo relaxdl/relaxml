@@ -5,7 +5,12 @@ import torch
 from torch import Tensor
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
+"""
+优化和深度学习
 
+说明:
+https://tech.foxrelax.com/optimization/basic/
+"""
 
 def plots(
     xs: List[Tensor],
