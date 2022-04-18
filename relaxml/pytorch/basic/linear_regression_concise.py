@@ -56,6 +56,9 @@ def load_array(data_arrays: List[Tensor],
 def linreg() -> nn.Module:
     """
     线性回归模型
+
+    指定每个权重参数应该从均值为0、标准差为0.01的正态分布中随机采样, 
+    偏置参数将初始化为零
     """
     net = nn.Sequential(nn.Linear(2, 1))
     net[0].weight.data.normal_(0, 0.01)

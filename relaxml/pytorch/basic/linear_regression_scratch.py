@@ -56,6 +56,9 @@ def data_iter(batch_size: int, features: Tensor, labels: Tensor) -> Iterator:
 
 def gen_params() -> Tuple[Tensor, Tensor]:
     """
+    从均值为0、标准差为0.01的正态分布中采样随机数来初始化权重, 
+    并将偏置初始化为0
+    
     生成模型参数: [w, b]
     """
     w = torch.normal(0, 0.01, size=(2, 1), requires_grad=True)
