@@ -1,5 +1,6 @@
 from typing import Dict, Iterator, Tuple, List, Callable
 import numpy as np
+import math
 import hashlib
 import requests
 import os
@@ -12,11 +13,32 @@ from torch.utils.data import DataLoader, TensorDataset
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 """
-动量法
+Adagrad
 
 说明:
-https://tech.foxrelax.com/optimization/momentum/
+https://tech.foxrelax.com/optimization/adagrad/
 """
+
+# 针对不同的demo, 需要修改下面超参数的值
+eta = 0.4
+
+
+def f_2d(x1: Tensor, x2: Tensor) -> Tensor:
+    return 0.1 * x1**2 + 2 * x2**2
+
+
+def adagrad_2d(x1: Tensor, x2: Tensor, s1: Tensor,
+               s2: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+    """
+    更新`参数`和`状态`
+    """
+    eps = 1e-6
+    g1, g2 = 0.2 * x1, 4 * x2
+    s1 += g1**2
+    s2 += g2**2
+    x1 -= eta / math.sqrt(s1 + eps) * g1
+    x2 -= eta / math.sqrt(s2 + eps) * g2
+    return x1, x2, s1, s2
 
 
 def train_2d(trainer: Callable,
@@ -48,25 +70,6 @@ def show_trace_2d(results: List[Tuple[Tensor, Tensor]], f: Callable) -> None:
     plt.xlabel('x1')
     plt.ylabel('x2')
     plt.show()
-
-
-# 针对不同的demo, 需要修改下面超参数的值
-eta, beta = 0.6, 0.5
-
-
-def f_2d(x1: Tensor, x2: Tensor) -> Tensor:
-    return 0.1 * x1**2 + 2 * x2**2
-
-
-def gd_2d(x1: Tensor, x2: Tensor, s1: Tensor,
-          s2: Tensor) -> Tuple[Tensor, Tensor]:
-    return (x1 - eta * 0.2 * x1, x2 - eta * 4 * x2, 0, 0)
-
-
-def momentum_2d(x1: Tensor, x2: Tensor, v1: Tensor, v2: Tensor) -> Tensor:
-    v1 = beta * v1 + 0.2 * x1
-    v2 = beta * v2 + 4 * x2
-    return x1 - eta * v1, x2 - eta * v2, v1, v2
 
 
 def download(cache_dir: str = '../data') -> str:
@@ -258,91 +261,55 @@ def train_concise_optimization(trainer_fn: Callable,
     plt.show()
 
 
-def init_momentum_states(feature_dim: int) -> Tuple[Tensor, Tensor]:
+def init_adagrad_states(feature_dim: int) -> Tuple[Tensor, Tensor]:
     """
     初始化state
     """
-    v_w = torch.zeros((feature_dim, 1))
-    v_b = torch.zeros(1)
-    return (v_w, v_b)
+    s_w = torch.zeros((feature_dim, 1))
+    s_b = torch.zeros(1)
+    return (s_w, s_b)
 
 
-def sgd_momentum(params: List[Tensor], states: List[Tensor],
-                 hyperparams: Dict[str, Tensor]) -> None:
+def adagrad(params: List[Tensor], states: List[Tensor],
+            hyperparams: Dict[str, Tensor]) -> None:
     """
     使用当前的grad来更新params和states
     """
-    for p, v in zip(params, states):
+    eps = 1e-6
+    for p, s in zip(params, states):
         with torch.no_grad():
-            v[:] = hyperparams['momentum'] * v + p.grad  # 更新states
-            p[:] -= hyperparams['lr'] * v  # 更新params
+            s[:] += torch.square(p.grad)  # 更新states
+            p[:] -= hyperparams['lr'] * p.grad / torch.sqrt(
+                s + eps)  # 更新params
         p.grad.data.zero_()
 
 
 def demo1():
     """
-    梯度下降
-
-    eta的不同取值: 0.4 | 0.6
+    eta的不同取值: 0.4 | 2.0
     >>> eta = 0.4
     >>> demo1()
     """
-    show_trace_2d(train_2d(gd_2d), f_2d)
+    show_trace_2d(train_2d(adagrad_2d), f_2d)
 
 
 def demo2():
     """
-    动量法
-
-    eta, beta的不同取值: 0.6, 0.25 | 0.6, 0.25
-    >>> eta, beta = 0.6, 0.5
-    >>> demo2()
+    从零实现
     """
-    show_trace_2d(train_2d(momentum_2d), f_2d)
+    data_iter, feature_dim = load_data_airfoil_self_noise(batch_size=10)
+    train_optimization(adagrad, init_adagrad_states(feature_dim), {'lr': 0.1},
+                       data_iter, feature_dim)
 
 
 def demo3():
     """
-    beta参数的理解
+    简洁实现
     """
-    betas = [0.95, 0.9, 0.6, 0]
-    for beta in betas:
-        x = torch.arange(40).detach().numpy()
-        plt.plot(x, beta**x, label=f'beta = {beta:.2f}')
-    plt.xlabel('time')
-    plt.legend()
-    plt.show()
-
-
-def demo4():
-    """
-    momentum从零实现
-    """
-    data_iter, feature_dim = load_data_airfoil_self_noise()
-
-    def train_momentum(lr, momentum, num_epochs=2):
-        train_optimization(sgd_momentum, init_momentum_states(feature_dim), {
-            'lr': lr,
-            'momentum': momentum
-        }, data_iter, feature_dim, num_epochs)
-
-    # 测试不同的参数:
-    train_momentum(0.02, 0.5)
-    # train_momentum(0.01, 0.9)
-    # train_momentum(0.005, 0.9)
-
-
-def demo5():
-    """
-    momentum简洁实现
-    """
-    data_iter, feature_dim = load_data_airfoil_self_noise()
-    trainer = torch.optim.SGD
-    train_concise_optimization(trainer, {
-        'lr': 0.005,
-        'momentum': 0.9
-    }, data_iter, feature_dim)
+    data_iter, feature_dim = load_data_airfoil_self_noise(batch_size=10)
+    trainer = torch.optim.Adagrad
+    train_concise_optimization(trainer, {'lr': 0.1}, data_iter, feature_dim)
 
 
 if __name__ == '__main__':
-    demo4()
+    demo3()
