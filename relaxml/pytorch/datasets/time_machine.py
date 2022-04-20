@@ -7,6 +7,11 @@ import requests
 import collections
 import torch
 """
+语言模型和数据集
+
+实现说明:
+https://tech.foxrelax.com/rnn/language_models_and_dataset/
+
 时间机语料库:
 大约3211行, 30000个单词左右, 是一个很小的语料库
 """
