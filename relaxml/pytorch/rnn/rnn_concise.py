@@ -6,7 +6,6 @@ import sys
 import math
 import random
 import hashlib
-from unicodedata import bidirectional
 import requests
 import collections
 import torch

@@ -92,12 +92,12 @@ def rnn(inputs: Tensor, state: Tuple[Tensor],
 
     参数:
     inputs: [num_steps, batch_size, vocab_size]
-    state:  [batch_size, num_hiddens] 状态
+    state:  ([batch_size, num_hiddens], ) 状态
     params: 5个参数
 
     输出: (outputs, state)
     outputs: [num_steps*batch_size, vocab_size] 包含所有时间步的输出
-    state: [batch_size, num_hiddens]            最终的state
+    state: ([batch_size, num_hiddens], )        最终的state
     """
     W_xh, W_hh, b_h, W_hq, b_q = params
     H, = state
