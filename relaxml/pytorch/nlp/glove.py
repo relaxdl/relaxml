@@ -131,7 +131,7 @@ class TokenEmbedding:
         embedding_name: 'glove.6B.50d' | 'glove.6B.100d'
         """
         # index_to_token: list of token
-        # idx_to_vec.shape: [num_tokens, embedding_dim]
+        # idx_to_vec.shape: [num_tokens, embed_size]
         self.idx_to_token, self.idx_to_vec = self._load_embedding(
             embedding_name)
         self.unknown_idx = 0  # <unk>对应的idx
@@ -150,12 +150,12 @@ class TokenEmbedding:
 
         参数:
         embedding_name: 'glove.6B.50d' | 'glove.6B.100d'
-                        glove.6B.50d对应的embedding_dim=50
-                        glove.6B.100d对应的embedding_dim=100
+                        glove.6B.50d对应的embed_size=50
+                        glove.6B.100d对应的embed_size=100
 
         返回: (idx_to_token, idx_to_vec)
         idx_to_token: list of token
-        idx_to_vec.shape: [num_tokens, embedding_dim]
+        idx_to_vec.shape: [num_tokens, embed_size]
         """
         # idx_to_token: list of token
         # idx_to_vec: list of vector, 每个vector是一个float list
@@ -186,7 +186,7 @@ class TokenEmbedding:
         tokens: list of token
 
         返回:
-        vecs.shape [num_tokens, embedding_dim]
+        vecs.shape [num_tokens, embed_size]
         """
         # 获取所有tokens的索引
         indices = [
