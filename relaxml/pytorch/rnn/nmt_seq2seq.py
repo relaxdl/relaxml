@@ -73,7 +73,7 @@ class Seq2SeqEncoder(Encoder):
 
     >>> vocab_size, embed_size, num_hiddens, num_layers, dropout = 10000, 32, 32, 2, 0.1
     >>> batch_size, num_steps = 64, 10
-    >>> X = torch.arange(0, batch_size * num_steps).reshape(batch_size, num_steps)
+    >>> X = torch.ones(batch_size, num_steps).long()
     >>> encoder = Seq2SeqEncoder(vocab_size, embed_size, num_hiddens, num_layers,
                                  dropout)
     >>> output, state = encoder(X)
@@ -125,8 +125,8 @@ class Seq2SeqDecoder(Decoder):
 
     >>> vocab_size, embed_size, num_hiddens, num_layers, dropout = 10000, 32, 32, 2, 0.1
     >>> batch_size, num_steps = 64, 10
-    >>> enc_X = torch.arange(0, batch_size * num_steps).reshape(batch_size, num_steps)
-    >>> dec_X = torch.arange(0, batch_size * num_steps).reshape(batch_size, num_steps)
+    >>> enc_X = torch.ones(batch_size, num_steps).long()
+    >>> dec_X = torch.ones(batch_size, num_steps).long()
     >>> encoder = Seq2SeqEncoder(vocab_size, embed_size, num_hiddens, num_layers,
                                  dropout)
     >>> decoder = Seq2SeqDecoder(vocab_size, embed_size, num_hiddens, num_layers,
