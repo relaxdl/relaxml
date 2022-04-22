@@ -15,10 +15,10 @@ from torch.utils.data import DataLoader, TensorDataset
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 """
-机器翻译(seq2seq)
+Bahdanau注意力做机器翻译
 
 实现说明:
-https://tech.foxrelax.com/rnn/nmt_seq2seq/
+https://tech.foxrelax.com/nlp/bahdanau_attention/
 """
 
 
@@ -119,7 +119,160 @@ class Seq2SeqEncoder(Encoder):
         return output, state
 
 
-class Seq2SeqDecoder(Decoder):
+def sequence_mask(X: Tensor, valid_len: Tensor, value: int = 0) -> Tensor:
+    """
+    在序列中屏蔽不相关的项
+
+    >>> X = torch.tensor([[1, 2, 3], 
+                          [4, 5, 6]])
+    >>> sequence_mask(X, torch.tensor([1, 2]))
+        tensor([[1, 0, 0],
+                [4, 5, 0]])
+
+    参数:
+    X: [batch_size, num_steps]
+       [batch_size, num_steps, size]
+    valid_len: [batch_size,]
+               [batch_size, num_steps]
+
+    返回:
+    X: [batch_size, num_steps]
+       [batch_size, num_steps, size]
+    """
+    maxlen = X.size(1)
+    mask = torch.arange((maxlen), dtype=torch.float32,
+                        device=X.device)[None, :] < valid_len[:, None]
+    X[~mask] = value
+    return X
+
+
+def masked_softmax(X: Tensor, valid_lens: Tensor) -> Tensor:
+    """
+    通过在最后一个轴上遮蔽元素来执行softmax操作
+
+    >>> masked_softmax(torch.rand(2, 2, 4), 
+                       torch.tensor([2, 3]))
+        tensor([[[0.4773, 0.5227, 0.0000, 0.0000],
+                 [0.4483, 0.5517, 0.0000, 0.0000]],
+
+                [[0.4079, 0.2658, 0.3263, 0.0000],
+                 [0.3101, 0.2718, 0.4182, 0.0000]]])
+
+    >>> masked_softmax(torch.rand(2, 2, 4), 
+                       torch.tensor([[1, 3], 
+                                     [2, 4]]))
+        tensor([[[1.0000, 0.0000, 0.0000, 0.0000],
+                 [0.3612, 0.2872, 0.3516, 0.0000]],
+
+                [[0.5724, 0.4276, 0.0000, 0.0000],
+                 [0.3007, 0.2687, 0.1585, 0.2721]]])
+
+    参数:
+    X: [batch_size, num_steps, size]
+    valid_len: [batch_size,]
+               [batch_size, num_steps]
+
+    输出:
+    output: [batch_size, num_steps, size]
+    """
+    if valid_lens is None:
+        return nn.functional.softmax(X, dim=-1)
+    else:
+        shape = X.shape
+        if valid_lens.dim() == 1:
+            # valid_lens.shape [batch_size, ]
+            #               -> [batch_size*num_steps, ]
+            valid_lens = torch.repeat_interleave(valid_lens, shape[1])
+        else:
+            # valid_lens.shape [batch_size, num_steps]
+            #               -> [batch_size*num_steps, ]
+            valid_lens = valid_lens.reshape(-1)
+
+        # 在最后的轴上, 被遮蔽的元素使用一个非常大的负值替换, 从而其softmax(指数)输出为0
+        # 参数:
+        # X.shape [batch_size, num_steps, size]
+        #      -> [batch_size*num_steps, size]
+        # valid_lens.shape [batch_size*num_steps, ]
+        # 最终:
+        # X.shape [batch_size*num_steps, size]
+        X = sequence_mask(X.reshape(-1, shape[-1]), valid_lens, value=-1e6)
+
+        # X.shape [batch_size, num_steps, size]
+        return nn.functional.softmax(X.reshape(shape), dim=-1)
+
+
+class AdditiveAttention(nn.Module):
+    """
+    加性注意力(query和key的是不同长度的矢量)
+
+    >>> batch_size, num_queries, num_kvs, query_size, key_size, value_size = 2, 1, 10, 20, 2, 4
+    >>> queries = torch.normal(0, 1, (batch_size, num_queries, query_size))
+    >>> keys = torch.ones((batch_size, num_kvs, key_size))
+    # values的小批量, 两个值矩阵是相同的
+    >>> values = torch.arange(40, dtype=torch.float32).reshape(
+            1, num_kvs, value_size).repeat(batch_size, 1, 1)
+    >>> valid_lens = torch.tensor([2, 6])
+
+    >>> attention = AdditiveAttention(
+            key_size=key_size,  # 2
+            query_size=query_size,  # 20
+            num_hiddens=8,
+            dropout=0.1)
+    >>> attention.eval()
+    >>> output = attention(queries, keys, values, valid_lens)
+    >>> assert output.shape == (batch_size, num_queries, value_size)
+    >>> output
+        tensor([[[ 2.0000,  3.0000,  4.0000,  5.0000]],
+                [[10.0000, 11.0000, 12.0000, 13.0000]]], grad_fn=<BmmBackward0>)
+    >>> show_heatmaps(attention.attention_weights.reshape(
+            (1, 1, batch_size * num_queries, num_kvs)), xlabel='Keys', ylabel='Queries')
+    """
+
+    def __init__(self, key_size: int, query_size: int, num_hiddens: int,
+                 dropout: float, **kwargs: Any) -> None:
+        super(AdditiveAttention, self).__init__(**kwargs)
+        """
+        三个需要学习的参数: W_k, W_q, w_v
+        """
+        self.W_k = nn.Linear(key_size, num_hiddens, bias=False)
+        self.W_q = nn.Linear(query_size, num_hiddens, bias=False)
+        self.w_v = nn.Linear(num_hiddens, 1, bias=False)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, queries: Tensor, keys: Tensor, values: Tensor,
+                valid_lens: Tensor) -> Tensor:
+        """
+        参数:
+        queries: [batch_size, num_queries, query_size]
+        keys: [batch_size, num_kvs, key_size]
+        values: [batch_size, num_kvs, value_size]
+        valid_lens: [batch_size, ] 在计算注意力的时候需要看多少个k/v pairs
+                    [batch_size, num_queries]
+
+        输出:
+        output: [batch_size, num_queries, value_size]
+        """
+        # queries.shape [batch_size, num_queries, num_hidden]
+        # keys.shape [batch_size, num_kvs, num_hidden]
+        queries, keys = self.W_q(queries), self.W_k(keys)
+
+        # 扩展维度:
+        # queries.shape [batch_size, num_queries, 1, num_hidden]
+        # keys.shape [batch_size, 1, num_kvs, num_hidden]
+        # 使用广播方式进行求和
+        # features.shape [batch_size, num_queries, num_kvs, num_hidden]
+        features = queries.unsqueeze(2) + keys.unsqueeze(1)
+        features = torch.tanh(features)
+        # scores.shape [batch_size, num_queries, num_kvs, 1]
+        #           -> [batch_size, num_queries, num_kvs]
+        scores = self.w_v(features).squeeze(-1)
+        # self.attention_weights.shape [batch_size, num_queries, num_kvs]
+        self.attention_weights = masked_softmax(scores, valid_lens)
+        # output.shape: [batch_size, num_queries, value_size]
+        return torch.bmm(self.dropout(self.attention_weights), values)
+
+
+class Seq2SeqAttentionDecoder(Decoder):
     """
     用于序列到序列学习的循环神经网络解码器
 
@@ -129,18 +282,21 @@ class Seq2SeqDecoder(Decoder):
     >>> dec_X = torch.ones(batch_size, num_steps).long()
     >>> encoder = Seq2SeqEncoder(vocab_size, embed_size, num_hiddens, num_layers,
                                  dropout)
-    >>> decoder = Seq2SeqDecoder(vocab_size, embed_size, num_hiddens, num_layers,
-                                 dropout)
+    >>> decoder = Seq2SeqAttentionDecoder(vocab_size, embed_size, num_hiddens,
+                                          num_layers, dropout)
     # 编码
     >>> enc_outputs = encoder(enc_X)
     >>> assert enc_outputs[0].shape == (num_steps, batch_size, num_hiddens)
     >>> assert enc_outputs[1].shape == (num_layers, batch_size, num_hiddens)
+
     # 初始化解码器state
-    >>> dec_state = decoder.init_state(enc_outputs)
+    >>> dec_state = decoder.init_state(enc_outputs, None)
     # 解码
     >>> dec_outputs = decoder(dec_X, dec_state)
     >>> assert dec_outputs[0].shape == (batch_size, num_steps, vocab_size)
-    >>> assert dec_outputs[1].shape == (num_layers, batch_size, num_hiddens)
+    >>> assert dec_outputs[1][0].shape == (batch_size, num_steps, num_hiddens)
+    >>> assert dec_outputs[1][1].shape == (num_layers, batch_size, num_hiddens)
+    >>> assert dec_outputs[1][2] == None
     """
 
     def __init__(self,
@@ -150,90 +306,110 @@ class Seq2SeqDecoder(Decoder):
                  num_layers: int,
                  dropout: float = 0,
                  **kwargs: Any) -> None:
-        super(Seq2SeqDecoder, self).__init__(**kwargs)
+        super(Seq2SeqAttentionDecoder, self).__init__(**kwargs)
         # Embedding + GRU + Dense
+
+        # Attention:
+        # 在这个场景中: query_size = key_size= value_size = num_hiddens
+        self.attention = AdditiveAttention(num_hiddens, num_hiddens,
+                                           num_hiddens, dropout)
+
         self.embedding = nn.Embedding(vocab_size, embed_size)
-        # 注意GRU的输入: 上下文变量在所有的时间步与解码器的输入进行拼接(concatenate),
-        # 也就是: embed_size + num_hiddens
         self.rnn = nn.GRU(embed_size + num_hiddens,
                           num_hiddens,
                           num_layers,
                           dropout=dropout)
         self.dense = nn.Linear(num_hiddens, vocab_size)
 
-    def init_state(self, enc_outputs: Tuple[Tensor, Tensor],
-                   *args: Any) -> Tensor:
+    def init_state(self, enc_outputs: Tuple[Tensor,
+                                            Tensor], enc_valid_lens: Tensor,
+                   *args: Any) -> Tuple[Tensor, Tensor, Tensor]:
         """
 
         参数:
         enc_outputs: (output, state) 就是编码器的输出
+        enc_valid_lens: [batch_size, ] 在计算注意力的时候需要看多少个k/v pairs
+                        [batch_size, num_queries]
 
-        输出:
+        输出: (outputs, state, enc_valid_lens)
+        outputs: [batch_size, num_steps, num_hiddens]
         state: [num_layers, batch_size, num_hiddens]
+        enc_valid_lens: [batch_size, ] 在计算注意力的时候需要看多少个k/v pairs
+                        [batch_size, num_queries]
         """
-        # 直接使用编码器最后一个时间步的隐藏状态(state)来初始化解码器的隐藏状态
-        return enc_outputs[1]
 
-    def forward(self, X: Tensor, state: Tensor) -> Tuple[Tensor, Tensor]:
+        # outputs.shape [num_steps, batch_size, num_hiddens]
+        # hidden_state.shape [num_layers, batch_size, num_hiddens]
+        outputs, hidden_state = enc_outputs
+
+        return (outputs.permute(1, 0, 2), hidden_state, enc_valid_lens)
+
+    def forward(
+        self, X: Tensor, state: Tuple[Tensor, Tensor, Tensor]
+    ) -> Tuple[Tensor, Tuple[Tensor, Tensor, Tensor]]:
         """
-        分4个步骤:
-        1. 使用embedding处理X, 得到word embedding
-        2. 拼接word embedding和Encoder的最终state, 得到X_and_context
-        3. 使用GRU来处理X_and_context得到输出output
-        4. 将output送到dense得到最终的结果
+        步骤:
+        1. 循环X, 一个token一个token的处理:
+           a. 使用embedding处理x, 得到word embedding
+           b. 使用当前GRU隐藏层的输出hidden_state作为query, 使用Encoder的输出作为keys和values
+              计算注意力context
+           c. 拼接word embedding和注意力context, 得到x_and_context
+           d. 使用GRU来处理x_and_context得到输出output
+        2. 将outputs送到dense得到最终的结果
 
         参数:
         X: [batch_size, num_steps]
-        state: [num_layers, batch_size, num_hiddens]
-
+        state: (outputs, state, enc_valid_lens)
+          enc_outputs: [batch_size, num_steps, num_hiddens]
+          hidden_state: [num_layers, batch_size, num_hiddens]
+          enc_valid_lens: [batch_size, ] 在计算注意力的时候需要看多少个k/v pairs
+                          [batch_size, num_queries]
+        
         输出: (output, state)
         output: [batch_size, num_steps, vocab_size]
-        state: [num_layers, batch_size, num_hiddens]
+        state: (outputs, state, enc_valid_lens)
+          enc_outputs: [batch_size, num_steps, num_hiddens]
+          hidden_state: [num_layers, batch_size, num_hiddens]
+          enc_valid_lens: [batch_size, ] 在计算注意力的时候需要看多少个k/v pairs
+                          [batch_size, num_queries]
         """
-
-        # X.shape [batch_size, num_steps, embed_size]
-        X = self.embedding(X)
-        # 在循环神经网络模型中, 第一个轴对应于时间步
+        enc_outputs, hidden_state, enc_valid_lens = state
         # X.shape [num_steps, batch_size, embed_size]
-        X = X.permute(1, 0, 2)
+        X = self.embedding(X).permute(1, 0, 2)
+        outputs, self._attention_weights = [], []
 
-        # state[-1]的含义是state可能会有多层, 我们只取最后一层, 广播使其具有与`X`相同的`num_steps`
-        # context.shape [num_steps, batch_size, hiddens]
-        context = state[-1].repeat(X.shape[0], 1, 1)
-        # X_and_context.shape [num_steps, batch_size, embed_size+num_hiddens]
-        X_and_context = torch.cat((X, context), 2)
+        # 一个step一个step的预测
+        for x in X:
+            # x.shape [batch_size, embed_size]
+            # query.shape [batch_size, 1, num_hiddens] num_queries=1
+            query = torch.unsqueeze(hidden_state[-1], dim=1)
 
-        # output.shape [num_steps, batch_size, num_hiddens]
-        # state.shape [num_layers, batch_size, num_hiddens]
-        output, state = self.rnn(X_and_context, state)
-        # output.shape [num_steps, batch_size, vocab_size]
-        #           -> [batch_size, num_steps, vocab_size]
-        output = self.dense(output).permute(1, 0, 2)
+            # 这里enc_valid_len的意义在于: 每个小批量当中的序列, 末尾可能是<pad>,
+            # 这部分在计算attention的时候是可以不用看的, 直接忽略掉
+            # context.shape [batch_size, 1, num_hiddens]
+            context = self.attention(query, enc_outputs, enc_outputs,
+                                     enc_valid_lens)
+            # 在特征维度上连结
+            # x_and_context.shape [bach_size, 1, num_hiddens + embed_size]
+            x_and_context = torch.cat((context, torch.unsqueeze(x, dim=1)),
+                                      dim=-1)
+            # x_and_context.shape [1, batch_size, num_hiddens + embed_size]
+            # out.shape [1, batch_size, num_hiddens]
+            # hidden_state.shape [num_layers, batch_size, num_hiddens]
+            out, hidden_state = self.rnn(x_and_context.permute(1, 0, 2),
+                                         hidden_state)
+            outputs.append(out)
+            # attention_weights的形状:
+            # attention_weights.shape [batch_size, 1, num_kvs] num_queries=1
+            self._attention_weights.append(self.attention.attention_weights)
+        # outputs.shape [num_steps, batch_size, vocab_size]
+        outputs = self.dense(torch.cat(outputs, dim=0))
+        return outputs.permute(1, 0,
+                               2), [enc_outputs, hidden_state, enc_valid_lens]
 
-        return output, state
-
-
-def sequence_mask(X: Tensor, valid_len: Tensor, value: int = 0) -> Tensor:
-    """
-    在序列中屏蔽不相关的项
-
-    >>> X = torch.tensor([[1, 2, 3], [4, 5, 6]])
-    >>> sequence_mask(X, torch.tensor([1, 2]))
-        tensor([[1, 0, 0],
-                [4, 5, 0]])
-
-    参数:
-    X: [batch_size, num_steps]
-    valid_len: [batch_size,]
-
-    返回:
-    X: [batch_size, num_steps]
-    """
-    maxlen = X.size(1)
-    mask = torch.arange((maxlen), dtype=torch.float32,
-                        device=X.device)[None, :] < valid_len[:, None]
-    X[~mask] = value
-    return X
+    @property
+    def attention_weights(self):
+        return self._attention_weights
 
 
 class MaskedSoftmaxCELoss(nn.CrossEntropyLoss):
@@ -741,8 +917,8 @@ def mnt_seq2seq(src_vocab_size: int, tgt_vocab_size: int, embed_size: int,
     embed_size, num_hiddens, num_layers, dropout = 32, 32, 2, 0.1
     encoder = Seq2SeqEncoder(src_vocab_size, embed_size, num_hiddens,
                              num_layers, dropout)
-    decoder = Seq2SeqDecoder(tgt_vocab_size, embed_size, num_hiddens,
-                             num_layers, dropout)
+    decoder = Seq2SeqAttentionDecoder(tgt_vocab_size, embed_size, num_hiddens,
+                                      num_layers, dropout)
     return EncoderDecoder(encoder, decoder)
 
 
@@ -762,15 +938,66 @@ def train(embed_size: int,
     return net, src_vocab, tgt_vocab
 
 
+def show_heatmaps(matrices: Tensor,
+                  xlabel: str,
+                  ylabel: str,
+                  titles: List[str] = None,
+                  figsize: Tuple[int, int] = (3.5, 3.5),
+                  cmap: str = 'Reds') -> None:
+    """
+    可视化注意力(显示的注意力分数)
+
+    `num_queries`个queries和`num_keys`个keys会产生`num_queries x num_keys`个分数
+
+    >>> attention_weights = torch.eye(10).reshape((1, 1, 10, 10)).repeat((2, 3, 1, 1))
+    >>> show_heatmaps(attention_weights,
+                      xlabel='Keys',
+                      ylabel='Queries',
+                      titles=['Title1', 'Title2', 'Title3'])
+
+    参数:
+    matrices: [num_rows, num_cols, num_queries, num_keys] attention_weights
+    xlabel: e.g. Keys
+    ylabel: e.g. Queries
+    titles: 每一列一个标题
+    figsize: 尺寸
+    cmap: e.g. Reds
+    """
+    num_rows, num_cols = matrices.shape[0], matrices.shape[1]
+    fig, axes = plt.subplots(num_rows,
+                             num_cols,
+                             figsize=figsize,
+                             sharex=True,
+                             sharey=True,
+                             squeeze=False)
+    for i, (row_axes, row_matrices) in enumerate(zip(axes, matrices)):
+        for j, (ax, matrix) in enumerate(zip(row_axes, row_matrices)):
+            pcm = ax.imshow(matrix.detach().numpy(), cmap=cmap)
+            if i == num_rows - 1:
+                ax.set_xlabel(xlabel)
+            if j == 0:
+                ax.set_ylabel(ylabel)
+            if titles:
+                ax.set_title(titles[j])
+    fig.colorbar(pcm, ax=axes, shrink=0.6)
+    plt.show()
+
+
 def test(net: EncoderDecoder, src_vocab: Vocab, tgt_vocab: Vocab,
          num_steps: int, device: torch.device) -> None:
     engs = ['go .', "i lost .", 'he\'s calm .', 'i\'m home .']
     fras = ['va !', 'j\'ai perdu .', 'il est calme .', 'je suis chez moi .']
     for eng, fra in zip(engs, fras):
-        translation, _ = predict_seq2seq(net, eng, src_vocab, tgt_vocab,
-                                         num_steps, device)
+        translation, dec_attention_weight_seq = predict_seq2seq(
+            net, eng, src_vocab, tgt_vocab, num_steps, device, True)
         print(
             f'{eng} => {translation}, bleu {bleu(translation, fra, k=2):.3f}')
+    attention_weights = torch.cat(
+        [step[0][0][0] for step in dec_attention_weight_seq], 0).reshape(
+            (1, 1, -1, num_steps))
+    show_heatmaps(attention_weights[:, :, :, :len(engs[-1].split()) + 1].cpu(),
+                  xlabel='Key positions',
+                  ylabel='Query positions')
 
 
 if __name__ == '__main__':
@@ -789,8 +1016,8 @@ if __name__ == '__main__':
     net, src_vocab, tgt_vocab = train(**kwargs)
     kwargs_test = {'num_steps': 10, 'device': device}
     test(net, src_vocab, tgt_vocab, **kwargs_test)
-# loss 0.011, 23286.0 tokens/sec on cpu
+# loss 0.012, 9596.2 tokens/sec on cpu
 # go . => va !, bleu 1.000
 # i lost . => j'ai perdu ., bleu 1.000
-# he's calm . => il est riche ., bleu 0.658
+# he's calm . => il a <unk> ., bleu 0.000
 # i'm home . => je suis chez moi ., bleu 1.000

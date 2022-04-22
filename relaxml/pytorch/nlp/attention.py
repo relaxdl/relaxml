@@ -4,6 +4,12 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 import matplotlib.pyplot as plt
+"""
+注意力
+
+实现说明:
+https://tech.foxrelax.com/nlp/attention/
+"""
 
 
 def show_heatmaps(matrices: Tensor,
@@ -171,13 +177,14 @@ class AdditiveAttention(nn.Module):
         self.w_v = nn.Linear(num_hiddens, 1, bias=False)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, queries, keys, values, valid_lens):
+    def forward(self, queries: Tensor, keys: Tensor, values: Tensor,
+                valid_lens: Tensor) -> Tensor:
         """
         参数:
         queries: [batch_size, num_queries, query_size]
         keys: [batch_size, num_kvs, key_size]
         values: [batch_size, num_kvs, value_size]
-        valid_lens: [batch_size, ]
+        valid_lens: [batch_size, ] 在计算注意力的时候需要看多少个k/v pairs
                     [batch_size, num_queries]
 
         输出:
@@ -235,13 +242,17 @@ class DotProductAttention(nn.Module):
         super(DotProductAttention, self).__init__(**kwargs)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, queries, keys, values, valid_lens=None):
+    def forward(self,
+                queries: Tensor,
+                keys: Tensor,
+                values: Tensor,
+                valid_lens: Tensor = None) -> Tensor:
         """
         参数:
         queries: [batch_size, num_queries, d]
         keys: [batch_size, num_kvs, d]
         values: [batch_size, num_kvs, value_size]
-        valid_lens: [batch_size, ]
+        valid_lens: [batch_size, ] 在计算注意力的时候需要看多少个k/v pairs
                     [batch_size, num_queries]
 
         输出:
@@ -255,6 +266,175 @@ class DotProductAttention(nn.Module):
         self.attention_weights = masked_softmax(scores, valid_lens)
         # output.shape: [batch_size, num_queries, value_size]
         return torch.bmm(self.dropout(self.attention_weights), values)
+
+
+class MultiHeadAttention(nn.Module):
+    """
+    实现多头注意力
+
+    >>> query_size, key_size, value_size, num_hiddens, num_heads = 5, 4, 3, 100, 5
+    >>> attention = MultiHeadAttention(key_size, query_size, value_size,
+                                       num_hiddens, num_heads, 0.5)
+    >>> attention.eval()
+    >>> batch_size, num_queries, num_kvs = 2, 4, 6
+    >>> valid_lens = torch.tensor([3, 2])
+    >>> Queries = torch.ones((batch_size, num_queries, query_size))
+    >>> Keys = torch.ones((batch_size, num_kvs, key_size))
+    >>> Values = torch.ones((batch_size, num_kvs, value_size))
+    >>> output = attention(Queries, Keys, Values, valid_lens)
+    >>> assert output.shape == (batch_size, num_queries, num_hiddens)
+    """
+
+    def __init__(self,
+                 key_size: int,
+                 query_size: int,
+                 value_size: int,
+                 num_hiddens: int,
+                 num_heads: int,
+                 dropout: float,
+                 bias: bool = False,
+                 **kwargs: Any) -> None:
+        super(MultiHeadAttention, self).__init__(**kwargs)
+        self.num_heads = num_heads
+
+        # 缩放点积注意力作为每一个注意力头
+        self.attention = DotProductAttention(dropout)
+
+        # 注意:
+        # 每个头应该有一个单独的W_q, W_k, W_v, 在这里我们将num_heads个头
+        # 的W_q, W_k, W_v合并到一起, 这样多个头可以并行计算
+        self.W_q = nn.Linear(query_size, num_hiddens, bias=bias)
+        self.W_k = nn.Linear(key_size, num_hiddens, bias=bias)
+        self.W_v = nn.Linear(value_size, num_hiddens, bias=bias)
+        self.W_o = nn.Linear(num_hiddens, num_hiddens, bias=bias)
+
+    def forward(self, queries: Tensor, keys: Tensor, values: Tensor,
+                valid_lens: Tensor) -> Tensor:
+        """
+        当前的版本是效率比较高的实现方式, 我们没有单独计算每个头, 
+        而是通过变换, 并行的计算多个头
+
+        参数:
+        queries: [batch_size, num_queries, query_size]
+        keys: [batch_size, num_kvs, key_size]
+        values: [batch_size, num_kvs, value_size]
+        valid_lens: [batch_size, ] 在计算注意力的时候需要看多少个k/v pairs
+                    [batch_size, num_queries]
+
+        输出:
+        output: [batch_size, num_queries, num_hiddens]
+        """
+        # queries.shape [batch_size, num_queries, num_hiddens]
+        #            -> [batch_size*num_heads, num_queries, num_hiddens/num_heads]
+        queries = transpose_qkv(self.W_q(queries), self.num_heads)
+        # keys.shape [batch_size, num_kvs, num_hiddens]
+        #            -> [batch_size*num_heads, num_kvs, num_hiddens/num_heads]
+        keys = transpose_qkv(self.W_k(keys), self.num_heads)
+        # values.shape [batch_size, num_kvs, num_hiddens]
+        #            -> [batch_size*num_heads, num_kvs, num_hiddens/num_heads]
+        values = transpose_qkv(self.W_v(values), self.num_heads)
+
+        if valid_lens is not None:
+            # [batch_size, ] -> [batch_size*num_heads, ]
+            # [batch_size, num_queries] -> [batch_size*num_heads, num_queries]
+            valid_lens = torch.repeat_interleave(valid_lens,
+                                                 repeats=self.num_heads,
+                                                 dim=0)
+
+        # 缩放点积注意力
+        # output.shape [batch_size*num_heads, num_queries, num_hiddens/num_heads]
+        output = self.attention(queries, keys, values, valid_lens)
+
+        # output_concat.shape [batch_size, num_queries, num_hiddens]
+        output_concat = transpose_output(output, self.num_heads)
+
+        # output.shape [batch_size, num_queries, num_hiddens]
+        return self.W_o(output_concat)
+
+
+def transpose_qkv(X: Tensor, num_heads: int) -> Tensor:
+    """
+    参数:
+    X: [batch_size, num_qkv, num_hiddens]
+    num_heads: 头数
+
+    输出:
+    output: [batch_size*num_heads, num_qkv, num_hiddens/num_heads]
+    """
+
+    # X.shape [batch_size, num_qkv, num_heads, num_hiddens/num_heads]
+    X = X.reshape(X.shape[0], X.shape[1], num_heads, -1)
+
+    # X.shape [batch_size, num_heads, num_qkv, num_hiddens/num_heads]
+    X = X.permute(0, 2, 1, 3)
+
+    # output.shape [batch_size*num_heads, num_qkv, num_hiddens/num_heads]
+    return X.reshape(-1, X.shape[2], X.shape[3])
+
+
+def transpose_output(X: Tensor, num_heads: int) -> Tensor:
+    """
+    逆转`transpose_qkv`函数的操作
+
+    参数:
+    X: [batch_size*num_heads, num_qkv, num_hiddens/num_heads]
+    num_heads: 头数
+
+    输出:
+    output: [batch_size, num_qkv, num_hiddens]
+    """
+    X = X.reshape(-1, num_heads, X.shape[1], X.shape[2])
+    X = X.permute(0, 2, 1, 3)
+    return X.reshape(X.shape[0], X.shape[1], -1)
+
+
+class PositionalEncoding(nn.Module):
+    """
+    位置编码
+    
+    >>> batch_size, num_hiddens, num_steps = 1, 32, 60
+    >>> pos_encoding = PositionalEncoding(num_hiddens, 0)
+    >>> pos_encoding.eval()
+    >>> X = pos_encoding(torch.zeros((batch_size, num_steps, num_hiddens)))
+    >>> assert X.shape == (batch_size, num_steps, num_hiddens)
+    >>> P = pos_encoding.P[:, :X.shape[1], :]
+    >>> assert P.shape == (1, num_steps, num_hiddens)
+    >>> P = P[0, :, :].unsqueeze(0).unsqueeze(0)
+    >>> assert P.shape == (1, 1, num_steps, num_hiddens)
+    >>> show_heatmaps(P, xlabel='Column (encoding dimension)',
+                      ylabel='Row (position)', figsize=(3.5, 4),
+                      cmap='Blues')
+    """
+
+    def __init__(self,
+                 num_hiddens: int,
+                 dropout: float,
+                 max_len: int = 1000) -> None:
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(dropout)
+        # 创建一个足够长的`P`
+        # P.shape [1, max_len, num_hiddens]
+        self.P = torch.zeros((1, max_len, num_hiddens))
+        X = torch.arange(max_len, dtype=torch.float32).reshape(
+            -1, 1) / torch.pow(
+                10000,
+                torch.arange(0, num_hiddens, 2, dtype=torch.float32) /
+                num_hiddens)
+        self.P[:, :, 0::2] = torch.sin(X)
+        self.P[:, :, 1::2] = torch.cos(X)
+
+    def forward(self, X: Tensor) -> Tensor:
+        """
+        参数: 
+        X: [batch_size, num_steps, num_hiddens]
+        
+        返回:
+        output: [batch_size, num_steps, size]
+        """
+        # P.shape [1, max_len, num_hiddens]
+        # 在相加的时候, P在第一个维度可以通过广播来进行计算
+        X = X + self.P[:, :X.shape[1], :].to(X.device)
+        return self.dropout(X)
 
 
 if __name__ == '__main__':
