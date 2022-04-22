@@ -213,7 +213,7 @@ class Seq2SeqDecoder(Decoder):
         return output, state
 
 
-def sequence_mask(X, valid_len, value=0):
+def sequence_mask(X: Tensor, valid_len: Tensor, value: int = 0) -> Tensor:
     """
     在序列中屏蔽不相关的项
 
