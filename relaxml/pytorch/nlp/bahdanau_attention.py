@@ -277,8 +277,9 @@ class Seq2SeqAttentionDecoder(Decoder):
     用于序列到序列学习的循环神经网络解码器
 
     >>> vocab_size, embed_size, num_hiddens, num_layers, dropout = 10000, 32, 32, 2, 0.1
-    >>> batch_size, num_steps = 64, 10
+    >>> batch_size, num_steps = 2, 10
     >>> enc_X = torch.ones(batch_size, num_steps).long()
+    >>> enc_valid_lens = torch.tensor([3, 2])
     >>> dec_X = torch.ones(batch_size, num_steps).long()
     >>> encoder = Seq2SeqEncoder(vocab_size, embed_size, num_hiddens, num_layers,
                                  dropout)
@@ -290,13 +291,12 @@ class Seq2SeqAttentionDecoder(Decoder):
     >>> assert enc_outputs[1].shape == (num_layers, batch_size, num_hiddens)
 
     # 初始化解码器state
-    >>> dec_state = decoder.init_state(enc_outputs, None)
+    >>> dec_state = decoder.init_state(enc_outputs, enc_valid_lens)
     # 解码
     >>> dec_outputs = decoder(dec_X, dec_state)
     >>> assert dec_outputs[0].shape == (batch_size, num_steps, vocab_size)
     >>> assert dec_outputs[1][0].shape == (batch_size, num_steps, num_hiddens)
     >>> assert dec_outputs[1][1].shape == (num_layers, batch_size, num_hiddens)
-    >>> assert dec_outputs[1][2] == None
     """
 
     def __init__(self,
@@ -927,7 +927,6 @@ def load_data_nmt(batch_size: int,
 def mnt_seq2seq(src_vocab_size: int, tgt_vocab_size: int, embed_size: int,
                 num_hiddens: int, num_layers: int,
                 dropout: float) -> EncoderDecoder:
-    embed_size, num_hiddens, num_layers, dropout = 32, 32, 2, 0.1
     encoder = Seq2SeqEncoder(src_vocab_size, embed_size, num_hiddens,
                              num_layers, dropout)
     decoder = Seq2SeqAttentionDecoder(tgt_vocab_size, embed_size, num_hiddens,

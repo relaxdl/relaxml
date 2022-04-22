@@ -755,7 +755,6 @@ def load_data_nmt(batch_size: int,
 def mnt_seq2seq(src_vocab_size: int, tgt_vocab_size: int, embed_size: int,
                 num_hiddens: int, num_layers: int,
                 dropout: float) -> EncoderDecoder:
-    embed_size, num_hiddens, num_layers, dropout = 32, 32, 2, 0.1
     encoder = Seq2SeqEncoder(src_vocab_size, embed_size, num_hiddens,
                              num_layers, dropout)
     decoder = Seq2SeqDecoder(tgt_vocab_size, embed_size, num_hiddens,
