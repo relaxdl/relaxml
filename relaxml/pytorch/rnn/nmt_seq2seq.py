@@ -239,6 +239,23 @@ def sequence_mask(X: Tensor, valid_len: Tensor, value: int = 0) -> Tensor:
 class MaskedSoftmaxCELoss(nn.CrossEntropyLoss):
     """
     带遮蔽的softmax交叉熵损失函数
+
+    计算过程如下:
+    假设pred的形状为: [2, 5, 10], label的形状为: [2, 5], 则reduction=none时, 计算出来
+    的loss的形状为: [2, 5], 如下:
+    tensor([[2.4712, 1.7931, 1.6518, 2.3004, 1.0466],
+            [3.5565, 2.1062, 3.2549, 3.9885, 2.7302]])
+
+    我们叠加如下的valid_len=tensor([5, 2]), 则会生成如下weights
+    tensor([[1, 1, 1, 1, 1],
+            [1, 1, 0, 0, 0]])
+
+    所以最终计算出来的loss为:
+    tensor([[2.4712, 1.7931, 1.6518, 2.3004, 1.0466],
+            [3.5565, 2.1062, 0, 0, 0]])
+    最终得到的loss为: tensor([1.8526, 1.1325])
+    (2.4712+1.7931+1.6518+2.3004+1.0466)/5 = 1.8526
+    (3.5565+2.1062)/5 = 1.1325
     """
 
     def forward(self, pred, label, valid_len):

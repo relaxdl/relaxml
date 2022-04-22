@@ -301,8 +301,19 @@ class MultiHeadAttention(nn.Module):
         self.attention = DotProductAttention(dropout)
 
         # 注意:
-        # 每个头应该有一个单独的W_q, W_k, W_v, 在这里我们将num_heads个头
-        # 的W_q, W_k, W_v合并到一起, 这样多个头可以并行计算
+        # 每个头应该有一个单独的W_q, W_k, W_v, 在这里我们为了实现多个头的`并行计算`,
+        # 将num_heads个头的W_q, W_k, W_v合并到一起, 这样多个头可以`并行计算`, 效率更高
+        #
+        # 举例说明:
+        # 如果有8个头, 我们每个头会有24个矩阵:
+        # W_q_1, W_q_2, ....W_q_8, 形状为: [query_size, num_hiddens/8]
+        # W_k_1, W_k_2, ....W_k_8, 形状为: [key_size, num_hiddens/8]
+        # W_v_1, W_v_2, ....W_v_8, 形状为: [value_size, num_hiddens/8]
+        #
+        # 当前的并行版本将8个头的24个矩阵合并为3个矩阵:
+        # W_q, 形状为: [query_size, num_hiddens]
+        # W_k, 形状为: [key_size, num_hiddens]
+        # W_v, 形状为: [value_size, num_hiddens]
         self.W_q = nn.Linear(query_size, num_hiddens, bias=bias)
         self.W_k = nn.Linear(key_size, num_hiddens, bias=bias)
         self.W_v = nn.Linear(value_size, num_hiddens, bias=bias)

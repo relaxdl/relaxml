@@ -329,13 +329,11 @@ class Seq2SeqAttentionDecoder(Decoder):
         参数:
         enc_outputs: (output, state) 就是编码器的输出
         enc_valid_lens: [batch_size, ] 在计算注意力的时候需要看多少个k/v pairs
-                        [batch_size, num_queries]
 
         输出: (outputs, state, enc_valid_lens)
         outputs: [batch_size, num_steps, num_hiddens]
         state: [num_layers, batch_size, num_hiddens]
         enc_valid_lens: [batch_size, ] 在计算注意力的时候需要看多少个k/v pairs
-                        [batch_size, num_queries]
         """
 
         # outputs.shape [num_steps, batch_size, num_hiddens]
@@ -363,7 +361,6 @@ class Seq2SeqAttentionDecoder(Decoder):
           enc_outputs: [batch_size, num_steps, num_hiddens]
           hidden_state: [num_layers, batch_size, num_hiddens]
           enc_valid_lens: [batch_size, ] 在计算注意力的时候需要看多少个k/v pairs
-                          [batch_size, num_queries]
         
         输出: (output, state)
         output: [batch_size, num_steps, vocab_size]
@@ -371,7 +368,6 @@ class Seq2SeqAttentionDecoder(Decoder):
           enc_outputs: [batch_size, num_steps, num_hiddens]
           hidden_state: [num_layers, batch_size, num_hiddens]
           enc_valid_lens: [batch_size, ] 在计算注意力的时候需要看多少个k/v pairs
-                          [batch_size, num_queries]
         """
         enc_outputs, hidden_state, enc_valid_lens = state
         # X.shape [num_steps, batch_size, embed_size]
@@ -415,6 +411,23 @@ class Seq2SeqAttentionDecoder(Decoder):
 class MaskedSoftmaxCELoss(nn.CrossEntropyLoss):
     """
     带遮蔽的softmax交叉熵损失函数
+
+    计算过程如下:
+    假设pred的形状为: [2, 5, 10], label的形状为: [2, 5], 则reduction=none时, 计算出来
+    的loss的形状为: [2, 5], 如下:
+    tensor([[2.4712, 1.7931, 1.6518, 2.3004, 1.0466],
+            [3.5565, 2.1062, 3.2549, 3.9885, 2.7302]])
+
+    我们叠加如下的valid_len=tensor([5, 2]), 则会生成如下weights
+    tensor([[1, 1, 1, 1, 1],
+            [1, 1, 0, 0, 0]])
+
+    所以最终计算出来的loss为:
+    tensor([[2.4712, 1.7931, 1.6518, 2.3004, 1.0466],
+            [3.5565, 2.1062, 0, 0, 0]])
+    最终得到的loss为: tensor([1.8526, 1.1325])
+    (2.4712+1.7931+1.6518+2.3004+1.0466)/5 = 1.8526
+    (3.5565+2.1062)/5 = 1.1325
     """
 
     def forward(self, pred, label, valid_len):
