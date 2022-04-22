@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 """
-Bahdanau注意力做机器翻译
+机器翻译(Bahdanau注意力)
 
 实现说明:
 https://tech.foxrelax.com/nlp/bahdanau_attention/
