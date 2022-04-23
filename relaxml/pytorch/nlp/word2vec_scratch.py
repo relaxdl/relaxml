@@ -1,6 +1,8 @@
 from typing import List, Union, Tuple, Dict
 import os
+import sys
 import hashlib
+import time
 import tarfile
 import collections
 import zipfile
@@ -8,8 +10,17 @@ import requests
 import random
 import math
 import torch
+import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+"""
+word2vec从零实现
+
+实现说明:
+https://tech.foxrelax.com/nlp/word2vec_scratch/
+"""
 
 
 def download(cache_dir: str = '../data') -> str:
@@ -472,5 +483,197 @@ def load_data_ptb(batch_size: int, max_window_size: int,
     return data_iter, vocab
 
 
+def skip_gram(center: Tensor, contexts_and_negatives: Tensor,
+              embed_v: nn.Embedding, embed_u: nn.Embedding) -> Tensor:
+    """
+    Skip-Gram的前向传播过程, 也就是center对应的词向量和contexts_and_negatives
+    所有的正样本和负样本对应的词向量做点积
+    
+    >>> batch_size, max_len, vocab_size, embed_size = 2, 10, 10000, 100
+    >>> net = nn.Sequential(
+           nn.Embedding(num_embeddings=vocab_size, embedding_dim=embed_size),
+           nn.Embedding(num_embeddings=vocab_size, embedding_dim=embed_size))
+    >>> center = torch.ones((batch_size, 1), dtype=torch.long)
+    >>> contexts_and_negatives = torch.ones((batch_size, max_len),
+                                             dtype=torch.long)
+    >>> pred = skip_gram(center, contexts_and_negatives, net[0], net[1])
+    >>> assert pred.shape == (batch_size, 1, max_len)
+
+    参数:
+    center: [batch_size, 1] 中心词
+    contexts_and_negatives的形状: [batch_size, max_len] 上下文与噪声词
+    embed_v: 嵌入层, [vocab_size, embed_size]
+    embed_u: 嵌入层, [vocab_size, embed_size]
+
+    返回:
+    pred的: [batch_size, 1, max_len]
+    """
+
+    # v.shape [batch_size, 1, embed_size] 词向量
+    # u.shape [batch_size, max_len, embed_size] 词向量
+    v = embed_v(center)
+    u = embed_u(contexts_and_negatives)
+
+    # 做点积
+    # pred.shape [batch_size, 1, max_len]
+    pred = torch.bmm(v, u.permute(0, 2, 1))
+    return pred
+
+
+class SigmoidBCELoss(nn.Module):
+    """
+    带掩码的二元交叉熵损失
+
+    >>> pred = torch.tensor([[1.1, -2.2, 3.3, -4.4]] * 2)
+    >>> label = torch.tensor([[1.0, 0.0, 0.0, 0.0], 
+                              [0.0, 1.0, 0.0, 0.0]])
+    >>> mask = torch.tensor([[1, 1, 1, 1], 
+                             [1, 1, 0, 0]])
+    >>> loss = SigmoidBCELoss()
+    >>> l = loss(pred, label, mask) * mask.shape[1] / mask.sum(axis=1)
+    >>> l
+        tensor([0.9352, 1.8462])
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self,
+                inputs: Tensor,
+                target: Tensor,
+                mask: Tensor = None) -> Tensor:
+        """
+        参数:
+        inputs: [batch_size, max_len]
+        target: [batch_size, max_len]
+        mask: [batch_size, max_len]
+
+        返回:
+        out: [batch_size, ]
+        """
+        out = nn.functional.binary_cross_entropy_with_logits(inputs,
+                                                             target,
+                                                             weight=mask,
+                                                             reduction='none')
+        return out.mean(dim=1)
+
+
+def try_gpu(i: int = 0) -> torch.device:
+    if torch.cuda.device_count() >= i + 1:
+        return torch.device(f'cuda:{i}')
+    return torch.device('cpu')
+
+
+def train_gpu(net: nn.Module,
+              data_iter: DataLoader,
+              lr: float,
+              num_epochs: int,
+              device=None) -> None:
+    """
+    用GPU训练模型
+    """
+    if device is None:
+        device = torch.device(
+            'cuda') if torch.cuda.is_available() else torch.device('cpu')
+    print('training on', device)
+
+    def init_weights(m):
+        if type(m) == nn.Embedding:
+            nn.init.xavier_uniform_(m.weight)
+
+    net.apply(init_weights)
+    net = net.to(device)
+    optimizer = torch.optim.Adam(net.parameters(), lr=lr)
+    loss = SigmoidBCELoss()
+    history = [[]]  # 记录: 训练集损失, 方便后续绘图
+    for epoch in range(num_epochs):
+        t_start = time.time()
+        metric_train = [0.0] * 2  # 统计: 归一化的损失之和, 归一化的损失数
+        num_batches = len(data_iter)
+        data_iter_tqdm = tqdm(data_iter, file=sys.stdout)
+        for i, batch in enumerate(data_iter_tqdm):
+            optimizer.zero_grad()
+            # center.shape [batch_size, 1]
+            # context_negative.shape [batch_size, max_len] 包含了正样本 + 负样本
+            # mask.shape [batch_size, max_len]
+            # label.shape [batch_size, max_len]
+            center, context_negative, mask, label = [
+                data.to(device) for data in batch
+            ]
+
+            # pred.shape [batch_size, 1, max_len]
+            pred = skip_gram(center, context_negative, net[0], net[1])
+            # 1. 将pred的形状转换成: [batch_size, max_len]再送入loss
+            # 2. mask.shape[1] - 表示一行一共多少元素
+            #    mask.sum(axis=1) - 表示一行为1的元素有多少个
+            #    通过这种方式, 我们计算出真正的mean loss, 不受有效样本个数的影响
+            l = (loss(pred.reshape(label.shape).float(), label.float(), mask) /
+                 mask.sum(axis=1) * mask.shape[1])
+            l.sum().backward()
+            optimizer.step()
+            metric_train[0] += float(l.sum())
+            metric_train[1] += float(l.numel())
+            train_loss = metric_train[0] / metric_train[1]
+            if (i + 1) % (num_batches // 5) == 0 or i == num_batches - 1:
+                history[0].append((epoch + (i + 1) / num_batches, train_loss))
+            data_iter_tqdm.desc = f'epoch {epoch}, step {i+1}, train loss {train_loss:.3f}'
+    print(
+        f'loss {train_loss:.3f}, '
+        f'{metric_train[1] / (time.time() - t_start):.1f} tokens/sec on {str(device)}'
+    )
+
+    plt.figure(figsize=(6, 4))
+    # 训练集损失
+    plt.plot(*zip(*history[0]), '-', label='train loss')
+    plt.xlabel('epoch')
+    # 从epoch=1开始显示, 0-1这个范围的数据丢弃不展示,
+    # 因为只有训练完成1个epochs之后, 才会有第一条test acc记录
+    plt.xlim((1, num_epochs))
+    plt.grid()
+    plt.legend()
+    plt.show()
+
+
+def train(batch_size: int, max_window_size: int, num_noise_words: int,
+          embed_size: int, lr: float,
+          num_epochs: int) -> Tuple[nn.Module, Vocab]:
+    data_iter, vocab = load_data_ptb(batch_size, max_window_size,
+                                     num_noise_words)
+
+    net = nn.Sequential(
+        nn.Embedding(num_embeddings=len(vocab), embedding_dim=embed_size),
+        nn.Embedding(num_embeddings=len(vocab), embedding_dim=embed_size))
+    train_gpu(net, data_iter, lr, num_epochs)
+    return net, vocab
+
+
+def get_similar_tokens(query_token: str, k: int, vocab: Vocab,
+                       embed: nn.Embedding) -> None:
+    # W.shape: [vocab_size, embed_size], 表示vocab中所有的词的词向量
+    W = embed.weight.data
+    x = W[vocab[query_token]]
+    # 计算余弦相似性, 增加1e-9以获得数值稳定性
+    cos = torch.mv(
+        W, x) / torch.sqrt(torch.sum(W * W, dim=1) * torch.sum(x * x) + 1e-9)
+    # 选出top k+1个最接近的
+    topk = torch.topk(cos, k=k + 1)[1].cpu().numpy().astype('int32')
+    for i in topk[1:]:  # 删除输入词(因为自己和自己是最接近的)
+        print(f'cosine sim={float(cos[i]):.3f}: {vocab.to_tokens(i)}')
+
+
 if __name__ == '__main__':
-    pass
+    device = try_gpu()
+    kwargs = {
+        'batch_size': 512,
+        'max_window_size': 5,
+        'num_noise_words': 5,
+        'embed_size': 100,
+        'lr': 0.002,
+        'num_epochs': 5
+    }
+    net, vocab = train(**kwargs)
+    get_similar_tokens('chip', 3, vocab, net[0])
+# loss 0.360, 35033.0 tokens/sec on cpu
+# cosine sim=0.716: microprocessor
+# cosine sim=0.709: intel
+# cosine sim=0.665: memory
