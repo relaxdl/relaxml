@@ -129,20 +129,6 @@ class Vocab:
     
     token内部的排序方式:
     <unk>, reserved_tokens, 其它按照token出现的频率从高到低排序
-
-    >>> raw_text = read_data_nmt()
-    >>> text = preprocess_nmt(raw_text)
-    >>> source, target = tokenize_nmt(text)
-    >>> src_vocab = Vocab(source,
-                          min_freq=2,
-                          reserved_tokens=['<pad>', '<bos>', '<eos>'])
-    >>> tgt_vocab = Vocab(target,
-                          min_freq=2,
-                          reserved_tokens=['<pad>', '<bos>', '<eos>'])
-    >>> len(src_vocab)
-        10012
-    >>> len(tgt_vocab)
-        17851
     """
 
     def __init__(self,
