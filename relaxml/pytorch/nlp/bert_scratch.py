@@ -1332,6 +1332,7 @@ def train(batch_size: int, max_len: int, num_steps: int, num_hiddens: int,
                     nsp_in_features=nsp_in_features)
     loss = nn.CrossEntropyLoss()
     train_bert_gpu(train_iter, net, loss, len(vocab), device, num_steps)
+    return net, vocab
 
 
 def get_bert_encoding(net: BERTModel,
