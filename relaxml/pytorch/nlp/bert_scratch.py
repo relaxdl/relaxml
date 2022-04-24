@@ -1384,6 +1384,8 @@ if __name__ == '__main__':
         'device': device,
     }
     net, vocab = train(**kwargs)
+    # MLM loss 6.943, NSP loss 0.701
+    # 8333.0 sentence pairs/sec on cuda:0
 
     tokens_a = ['a', 'crane', 'is', 'flying']
     encoded_text = get_bert_encoding(net, tokens_a, device=device)
@@ -1392,12 +1394,18 @@ if __name__ == '__main__':
     encoded_text_crane = encoded_text[:, 2, :]
     print(encoded_text.shape, encoded_text_cls.shape,
           encoded_text_crane[0][:3])
+    # torch.Size([1, 6, 128])
+    # torch.Size([1, 128])
+    # tensor([-0.2938,  0.0296, -0.0676], device='cuda:0', grad_fn=<SliceBackward0>)
 
     tokens_a, tokens_b = ['a', 'crane', 'driver',
                           'came'], ['he', 'just', 'left']
-    encoded_pair = get_bert_encoding(net, tokens_a, tokens_b)
+    encoded_pair = get_bert_encoding(net, tokens_a, tokens_b, device=device)
     # 词元：'<cls>','a','crane','driver','came','<sep>','he','just','left','<sep>'
     encoded_pair_cls = encoded_pair[:, 0, :]
     encoded_pair_crane = encoded_pair[:, 2, :]
     print(encoded_pair.shape, encoded_pair_cls.shape,
           encoded_pair_crane[0][:3])
+    # torch.Size([1, 10, 128])
+    # torch.Size([1, 128])
+    # tensor([-0.1867,  0.1516, -0.5738], device='cuda:0', grad_fn=<SliceBackward0>)
