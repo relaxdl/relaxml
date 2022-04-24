@@ -43,7 +43,6 @@ def download(name: str, cache_dir: str = '../data') -> str:
     with open(fname, 'wb') as f:
         f.write(r.content)
     print(f'download {fname} success!')
-    # e.g. ../data/flower_photos.zip
     return fname
 
 
@@ -64,7 +63,6 @@ def download_extract(name: str, cache_dir: str = '../data') -> str:
     else:
         assert False, 'Only zip/tar files can be extracted.'
     fp.extractall(base_dir)
-    # e.g. ../data/flower_photos
     return data_dir
 
 
