@@ -876,7 +876,8 @@ def decomposable_attention_net(vocab: Vocab, embed_size: int, num_hiddens: int,
 
 def train(batch_size: int, num_epochs: int, num_steps: int, embed_size: int,
           num_hiddens: int, num_inputs_attend: int, num_inputs_compare: int,
-          num_inputs_agg: int) -> Tuple[DecomposableAttention, Vocab]:
+          num_inputs_agg: int,
+          device: torch.device) -> Tuple[DecomposableAttention, Vocab]:
     train_iter, test_iter, vocab = load_data_snli(batch_size, num_steps)
     net = decomposable_attention_net(vocab, embed_size, num_hiddens,
                                      num_inputs_attend, num_inputs_compare,
@@ -896,7 +897,8 @@ if __name__ == '__main__':
         'num_hiddens': 200,
         'num_inputs_attend': 100,
         'num_inputs_compare': 200,
-        'num_inputs_agg': 400
+        'num_inputs_agg': 400,
+        'device': device,
     }
     net, vocab = train(**kwargs)
     # train loss 0.495, train acc 0.805, test acc 0.828

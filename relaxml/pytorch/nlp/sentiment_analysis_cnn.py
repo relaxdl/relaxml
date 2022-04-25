@@ -662,8 +662,8 @@ def textcnn_net(vocab: Vocab, embed_size: int, kernel_sizes: List[int],
 
 
 def train(batch_size: int, num_epochs: int, embed_size: int,
-          kernel_sizes: List[int],
-          nums_channels: List[int]) -> Tuple[TextCNN, Vocab]:
+          kernel_sizes: List[int], nums_channels: List[int],
+          device: torch.device) -> Tuple[TextCNN, Vocab]:
     train_iter, test_iter, vocab = load_data_imdb(batch_size)
     net = textcnn_net(vocab, embed_size, kernel_sizes, nums_channels)
     history = train_gpu(net, train_iter, test_iter, num_epochs, device=device)
@@ -678,7 +678,8 @@ if __name__ == '__main__':
         'num_epochs': 5,
         'embed_size': 100,
         'kernel_sizes': [3, 4, 5],
-        'nums_channels': [100, 100, 100]
+        'nums_channels': [100, 100, 100],
+        'device': device
     }
     net, vocab = train(**kwargs)
     # epoch 0, step 391, train loss 0.398, train acc 0.819: 100%|██████████| 391/391 [00:06<00:00, 63.84it/s]

@@ -302,6 +302,12 @@ class BiRNN(nn.Module):
 
     def forward(self, inputs: Tensor) -> Tensor:
         """
+        1. 编码文本: 文本序列的每个token经由嵌入层self.embedding获得其单独的预训练GloVe表示
+        2. 提取文本特征: 整个文本序列由双向循环神经网络self.encoder编码, 双向LSTM在`初始时间步`
+           和`最终时间步`的隐状态被连结起来作为文本序列的表示
+        3. 输出预测结果: 文本序列的表示通过一个具有两个输出'积极'和'消极'的全连接层self.decoder
+           转换为输出类别
+
         参数:
         inputs: [batch_size, num_steps]
 
@@ -656,13 +662,12 @@ def bi_rnn_net(vocab: Vocab, embed_size: int, num_hiddens: int,
 
 
 def train(batch_size: int, num_epochs: int, embed_size: int, num_hiddens: int,
-          num_layers: int) -> Tuple[BiRNN, Vocab]:
+          num_layers: int, device: torch.device) -> Tuple[BiRNN, Vocab]:
     train_iter, test_iter, vocab = load_data_imdb(batch_size)
     net = bi_rnn_net(vocab, embed_size, num_hiddens, num_layers)
     history = train_gpu(net, train_iter, test_iter, num_epochs, device=device)
     plot_history(history)
     return net, vocab
-
 
 if __name__ == '__main__':
     device = try_gpu()
@@ -671,7 +676,8 @@ if __name__ == '__main__':
         'num_epochs': 5,
         'embed_size': 100,
         'num_hiddens': 100,
-        'num_layers': 2
+        'num_layers': 2,
+        'device': device
     }
     net, vocab = train(**kwargs)
     # epoch 0, step 391, train loss 0.573, train acc 0.676: 100%|██████████| 391/391 [00:40<00:00,  9.64it/s]

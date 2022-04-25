@@ -621,15 +621,15 @@ def train_gpu(net: nn.Module,
 
 
 def train(batch_size: int, max_window_size: int, num_noise_words: int,
-          embed_size: int, lr: float,
-          num_epochs: int) -> Tuple[nn.Module, Vocab]:
+          embed_size: int, lr: float, num_epochs: int,
+          device: torch.device) -> Tuple[nn.Module, Vocab]:
     data_iter, vocab = load_data_ptb(batch_size, max_window_size,
                                      num_noise_words)
 
     net = nn.Sequential(
         nn.Embedding(num_embeddings=len(vocab), embedding_dim=embed_size),
         nn.Embedding(num_embeddings=len(vocab), embedding_dim=embed_size))
-    train_gpu(net, data_iter, lr, num_epochs)
+    train_gpu(net, data_iter, lr, num_epochs, device=device)
     return net, vocab
 
 
@@ -655,7 +655,8 @@ if __name__ == '__main__':
         'num_noise_words': 5,
         'embed_size': 100,
         'lr': 0.002,
-        'num_epochs': 5
+        'num_epochs': 5,
+        'device': device
     }
     net, vocab = train(**kwargs)
     get_similar_tokens('chip', 3, vocab, net[0])
