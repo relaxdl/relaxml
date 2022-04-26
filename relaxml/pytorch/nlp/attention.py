@@ -440,7 +440,7 @@ class PositionalEncoding(nn.Module):
         X: [batch_size, num_steps, num_hiddens]
         
         返回:
-        output: [batch_size, num_steps, size]
+        output: [batch_size, num_steps, num_hiddens]
         """
         # P.shape [1, max_len, num_hiddens]
         # 在相加的时候, P在第一个维度可以通过广播来进行计算
