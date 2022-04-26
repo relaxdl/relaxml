@@ -306,3 +306,4 @@ def train() -> None:
 
 if __name__ == '__main__':
     train()
+    # step: 2499 | loss: 2.326

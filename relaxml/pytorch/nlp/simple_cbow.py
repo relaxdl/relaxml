@@ -308,3 +308,4 @@ def train() -> None:
 
 if __name__ == '__main__':
     train()
+    # step: 9999 | loss: 1.443
