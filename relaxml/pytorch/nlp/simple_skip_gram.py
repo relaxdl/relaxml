@@ -1,7 +1,16 @@
-from typing import Dict, List
+from typing import Any, Dict, List
 import numpy as np
 import itertools
 import torch
+from torch import Tensor, nn
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+"""
+Simple Skip-Gram
+
+实现说明:
+https://tech.foxrelax.com/nlp/simple_skip_gram/
+"""
 """
 将句子人工分为两类(数字类, 字母类), 虽然都是文本, 但是期望模型能自动区分出
 在空间上, 数字和字母是有差别的. 因为数字总是和数字一同出现, 而字母总是和字母
@@ -157,16 +166,143 @@ def process_w2v_data(corpus: List[str],
     return Dataset(x, y, token_to_id, id_to_token)
 
 
-if __name__ == '__main__':
-    batch_size = 6
-    ds = process_w2v_data(corpus, 2, 'cbow')
-    bx, by = ds.sample(batch_size)
-    bx, by = torch.from_numpy(bx), torch.from_numpy(by)
-    assert bx.shape == (batch_size, 4)
-    assert by.shape == (batch_size, )
+class SkipGram(nn.Module):
 
-    ds = process_w2v_data(corpus, 2, 'skip_gram')
-    bx, by = ds.sample(batch_size)
-    bx, by = torch.from_numpy(bx), torch.from_numpy(by)
-    assert bx.shape == (batch_size, 1)
-    assert by.shape == (batch_size, )
+    def __init__(self, vocab_size: int, embed_size: int) -> None:
+        """
+        参数:
+        vocab_size: 词表大小
+        embed_size: 词向量的维度
+        """
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.embeddings = nn.Embedding(vocab_size, embed_size)
+        self.embeddings.weight.data.normal_(0, 0.1)
+        self.hidden_out = nn.Linear(embed_size, vocab_size)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=0.01)
+
+    def forward(self,
+                x: Tensor,
+                training: Any = None,
+                mask: Any = None) -> Tensor:
+        """
+        参数:
+        x: [batch_size, num_step=1]
+        training: 当前版本没用
+        mask: 当前版本没用
+
+        返回:
+        pred: [batch_size, vocab_size]
+        """
+        # o.shape [batch_size, num_step=1, embed_size]
+        o = self.embeddings(x)
+        # o.shape [batch_size, embed_size]
+        o = torch.mean(o, dim=1)
+        # pred.shape [batch_size, vocab_size]
+        pred = self.hidden_out(o)
+        return pred
+
+    def loss(self, x: Tensor, y: Tensor, training: Any = None) -> Tensor:
+        """
+        计算一个批量的loss
+        1. 前向传播
+        2. 计算loss
+
+        参数:
+        x: [batch_size, num_steps=1]
+        y: [batch_size,]
+        training: 当前版本没用
+
+        返回:
+        loss: 标量的loss(mean)
+        """
+        # pred.shape [batch_size, vocab_size]
+        pred = self.forward(x, training)
+        # 标量
+        return nn.functional.cross_entropy(pred, y, reduction='mean')
+
+    def step(self, x: Tensor, y: Tensor) -> np.array:
+        """
+        训练一个批量
+        1. 前向传播计算loss
+        2. 后向传播更新梯度
+
+
+        参数:
+        x: [batch_size, num_steps=1]
+        y: [batch_size, ]
+
+        返回:
+        loss: 标量的loss
+        """
+
+        self.optimizer.zero_grad()
+        loss = self.loss(x, y, True)
+        loss.backward()
+        self.optimizer.step()
+        return loss.cpu().detach().numpy()
+
+
+def try_gpu(i: int = 0) -> torch.device:
+    if torch.cuda.device_count() >= i + 1:
+        return torch.device(f'cuda:{i}')
+    return torch.device('cpu')
+
+
+def train_gpu(model: nn.Module,
+              data: Dataset,
+              batch_size: int = 8,
+              num_steps: int = 2500) -> None:
+    device = try_gpu()
+    model.to(device)
+    print('train on device:', device)
+    tqdm_iter = tqdm(range(num_steps))
+    for t in tqdm_iter:
+        bx, by = data.sample(batch_size)
+        bx, by = torch.from_numpy(bx).to(device), torch.from_numpy(by).to(
+            device)
+        loss = model.step(bx, by)
+        tqdm_iter.desc = f"step: {t} | loss: {loss:.3f}"
+
+
+def show_w2v_word_embedding(model: nn.Module, data: Dataset) -> None:
+    """
+    参数:
+
+    model: 模型
+    data: Dataset实例
+    """
+    word_emb = model.embeddings.weight.data.cpu().numpy()
+    # 遍历vocab中所有的单词
+    for i in range(data.num_word):
+        # 数字用蓝色, 字母用红色
+        c = "blue"
+        try:
+            int(data.id_to_token[i])
+        except:
+            c = "red"
+        # 显示单词
+        plt.text(word_emb[i, 0],
+                 word_emb[i, 1],
+                 s=data.id_to_token[i],
+                 color=c,
+                 weight="bold")
+
+    plt.xlim(word_emb[:, 0].min() - 1.0, word_emb[:, 0].max() + 1.0)
+    plt.ylim(word_emb[:, 1].min() - 1.0, word_emb[:, 1].max() + 1.0)
+    plt.xticks(())
+    plt.yticks(())
+    plt.xlabel("embedding dim1")
+    plt.ylabel("embedding dim2")
+    plt.show()
+
+
+def train() -> None:
+    ds = process_w2v_data(corpus, skip_window=2, method="skip_gram")
+    net = SkipGram(ds.num_word, embed_size=2)
+    train_gpu(net, ds)
+    show_w2v_word_embedding(net, ds)
+
+
+if __name__ == '__main__':
+    train()
