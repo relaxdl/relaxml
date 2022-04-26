@@ -51,7 +51,7 @@ class Dataset:
         self.token_to_id, self.id_to_token = token_to_id, id_to_token
         self.vocab = token_to_id.keys()
 
-    def sample(self, n: int) -> np.array:
+    def sample(self, n: int) -> np.ndarray:
         """
         随机采样, 返回n个样本
 

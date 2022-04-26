@@ -60,7 +60,7 @@ class Dataset:
         self.token_to_id, self.id_to_token = token_to_id, id_to_token
         self.vocab = token_to_id.keys()
 
-    def sample(self, n: int) -> np.array:
+    def sample(self, n: int) -> np.ndarray:
         """
         随机采样, 返回n个样本
 
@@ -224,7 +224,7 @@ class CBOW(nn.Module):
         # 标量
         return nn.functional.cross_entropy(pred, y, reduction='mean')
 
-    def step(self, x: Tensor, y: Tensor) -> np.array:
+    def step(self, x: Tensor, y: Tensor) -> np.ndarray:
         """
         训练一个批量
         1. 前向传播计算loss
