@@ -3,11 +3,13 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import sys
 import torch
-from torch import Tensor
+from torch import Tensor, dtype
 import torch.nn as nn
 from torch.nn.functional import cross_entropy, softmax, relu
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from matplotlib.pyplot import cm
+import matplotlib.pyplot as plt
 """
 Simple Transformer
 
@@ -620,6 +622,33 @@ class PositionEmbedding(nn.Module):
 
 
 class Transformer(nn.Module):
+    """
+    # `训练模式`的前向传播
+    >>> x = torch.ones((batch_size, num_steps), dtype=torch.long)
+    >>> y = torch.ones((batch_size, num_steps), dtype=torch.long)
+    >>> assert model(x, y, None).shape == (batch_size, num_steps, vocab_size)
+    >>> attentions = model.attentions
+    >>> for i in range(n_layer):
+    >>>     encoder = attentions['encoder'][i]
+    >>>     decoder_mh1 = attentions['decoder']['mh1'][i]
+    >>>     decoder_mh2 = attentions['decoder']['mh2'][i]
+    >>>     assert encoder.shape == (batch_size, n_head, num_steps, num_steps)
+    >>>     assert decoder_mh1.shape == (batch_size, n_head, num_steps, num_steps)
+    >>>     assert decoder_mh2.shape == (batch_size, n_head, num_steps, num_steps)
+
+    # `预测模式`的前向传播
+    >>> x = torch.ones((1, max_len), dtype=torch.long)
+    >>> assert model.translate(x, dataset.token_to_id,
+                               dataset.id_to_token).shape == (1, max_len + 1)
+    >>> attentions = model.attentions
+    >>> for i in range(n_layer):
+    >>>     encoder = attentions['encoder'][i]
+    >>>     decoder_mh1 = attentions['decoder']['mh1'][i]
+    >>>     decoder_mh2 = attentions['decoder']['mh2'][i]
+    >>>     assert encoder.shape == (1, n_head, max_len, max_len)
+    >>>     assert decoder_mh1.shape == (1, n_head, max_len, max_len)
+    >>>     assert decoder_mh2.shape == (1, n_head, max_len, max_len)
+    """
 
     def __init__(self,
                  vocab_size: int,
@@ -843,6 +872,41 @@ class Transformer(nn.Module):
             target[:, i + 1] = idx
         return target
 
+    @property
+    def attentions(self) -> Tuple[Dict[str, List[Tensor]]]:
+        """
+        做一次前向传播(训练模式和预测模式), 会更新一次attentions
+
+        返回: attentions
+        {
+            'encoder': List of [batch_size, n_head, num_steps, num_steps]
+            'decoder': {
+                'mh1': List of [batch_size, n_head, num_steps, num_steps]
+                'mh2': List of [batch_size, n_head, num_steps, num_steps]
+            }
+        }
+        """
+        attentions = {
+            "encoder": [
+                # [batch_size, n_head, num_steps, num_steps]
+                l.mh.attention.cpu().data.numpy()
+                for l in self.encoder.encoder_layers
+            ],
+            "decoder": {
+                "mh1": [
+                    # [batch_size, n_head, num_steps, num_steps]
+                    l.mh[0].attention.cpu().data.numpy()
+                    for l in self.decoder.decoder_layers
+                ],
+                "mh2": [
+                    # [batch_size, n_head, num_steps, num_steps]
+                    l.mh[1].attention.cpu().data.numpy()
+                    for l in self.decoder.decoder_layers
+                ],
+            }
+        }
+        return attentions
+
 
 def try_gpu(i: int = 0) -> torch.device:
     if torch.cuda.device_count() >= i + 1:
@@ -850,11 +914,12 @@ def try_gpu(i: int = 0) -> torch.device:
     return torch.device('cpu')
 
 
-def train(num_epochs: int = 100,
-          num_hiddens: int = 32,
-          n_layer: int = 3,
-          n_head: int = 4,
-          device: torch.device = None) -> None:
+def train(
+        num_epochs: int = 100,
+        num_hiddens: int = 32,
+        n_layer: int = 3,
+        n_head: int = 4,
+        device: torch.device = None) -> Tuple[nn.Module, DataLoader, DateData]:
     data_iter, dataset = load_date()
     print("Chinese time order: yy/mm/dd ", dataset.date_cn[:3],
           "\nEnglish time order: dd/M/yyyy", dataset.date_en[:3])
@@ -893,31 +958,373 @@ def train(num_epochs: int = 100,
                 src = dataset.idx2str(bx[0].cpu().data.numpy())
                 data_iter_tqdm.desc = f'epoch {epoch}, step {i}, loss {loss:.3f}, ' \
                     f'input {src}, target {target}, inference {res}'
+    return model, data_iter, dataset
+
+
+def export_attention(model: nn.Module,
+                     data_iter: DataLoader,
+                     dataset: DateData,
+                     device: torch.device = None) -> Dict:
+    """
+    翻译一句话, 并返回其对应的attentions
+    """
+    for batch in data_iter:
+        # bx.shape [batch_size, num_steps_x]
+        # by.shape [batch_size, num_steps_y]
+        bx, by, decoder_len = batch
+        src = [[dataset.id_to_token[int(i)] for i in bx[j]]
+               for j in range(len(bx[0:1]))]
+        tgt = [[dataset.id_to_token[int(i)] for i in by[j]]
+               for j in range(len(by[0:1]))]
+        # bx.shape [batch_size, MAX_LEN]
+        # by.shape [batch_size, MAX_LEN+1]
+        bx, by = torch.from_numpy(pad_zero(bx, max_len=MAX_LEN)).type(
+            torch.LongTensor).to(device), torch.from_numpy(
+                pad_zero(by, MAX_LEN + 1)).type(torch.LongTensor).to(device)
+    # 送入translate参数的形状: [1, MAX_LEN]
+    model.translate(bx[0:1], dataset.token_to_id, dataset.id_to_token)
+    attn_data = {"src": src, "tgt": tgt, "attentions": model.attentions}
+    return attn_data
+
+
+def all_mask_kinds():
+    """
+    展示Transformer中两种类型的mask:
+    1. padding mask
+    2. look ahead mask
+    """
+    batch_size, max_len = 4, 6
+    seqs = [
+        "I love you", "My name is M", "This is a very long seq", "Short one"
+    ]
+    # vocabs:
+    # {'Short', 'love', 'This', 'seq', 'is', 'long', 'My',
+    #  'one', 'a', 'you', 'name', 'M', 'very', 'I'}
+    vocabs = set((" ".join(seqs)).split(" "))
+    id_to_token = {i: v for i, v in enumerate(vocabs, start=1)}
+    id_to_token[0] = '<PAD>'  # add 0 idx for <PAD>
+    token_to_id = {v: i for i, v in id_to_token.items()}
+
+    # id_seqs:
+    # [[1, 11, 13],
+    #  [14, 10, 3, 5],
+    #  [2, 3, 8, 4, 7, 12],
+    #  [9, 6]]
+    id_seqs = [[token_to_id[v] for v in seq.split(" ")] for seq in seqs]
+    # padded_id_seqs.shape [max_len, max_len]
+    # [[10  9  1  0  0  0]
+    #  [14  2  7  5  0  0]
+    #  [11  7  3  6 12  8]
+    #  [13  4  0  0  0  0]]
+    padded_id_seqs = np.array([l + [0] * (max_len - len(l)) for l in id_seqs])
+    # pmask.shape [max_len, max_len]
+    # [[0 0 0 1 1 1]
+    #  [0 0 0 0 1 1]
+    #  [0 0 0 0 0 0]
+    #  [0 0 1 1 1 1]]
+    pmask = np.where(padded_id_seqs == 0, np.ones_like(padded_id_seqs),
+                     np.zeros_like(padded_id_seqs))  # 0 idx is padding
+    # pmash.shape [batch_size, max_len, max_len]
+    # [[[0 0 0 1 1 1]
+    #   [0 0 0 1 1 1]
+    #   [0 0 0 1 1 1]
+    #   [0 0 0 1 1 1]
+    #   [0 0 0 1 1 1]
+    #   [0 0 0 1 1 1]]
+    #  [[0 0 0 0 1 1]
+    #   [0 0 0 0 1 1]
+    #   [0 0 0 0 1 1]
+    #   [0 0 0 0 1 1]
+    #   [0 0 0 0 1 1]
+    #   [0 0 0 0 1 1]]
+    #  [[0 0 0 0 0 0]
+    #   [0 0 0 0 0 0]
+    #   [0 0 0 0 0 0]
+    #   [0 0 0 0 0 0]
+    #   [0 0 0 0 0 0]
+    #   [0 0 0 0 0 0]]
+    #  [[0 0 1 1 1 1]
+    #   [0 0 1 1 1 1]
+    #   [0 0 1 1 1 1]
+    #   [0 0 1 1 1 1]
+    #   [0 0 1 1 1 1]
+    #   [0 0 1 1 1 1]]]
+    pmask = np.repeat(pmask[:, None, :], pmask.shape[-1], axis=1)
+    plt.rcParams['xtick.bottom'] = plt.rcParams['xtick.labelbottom'] = False
+    plt.rcParams['xtick.top'] = plt.rcParams['xtick.labeltop'] = True
+    for i in range(1, batch_size + 1):
+        plt.subplot(2, 2, i)
+        plt.imshow(pmask[i - 1], vmax=1, vmin=0, cmap="YlGn")
+        labels = seqs[i - 1].split(" ")
+        plt.xticks(range(max_len),
+                   labels + [' '] * (max_len - len(labels)),
+                   rotation=45)
+        plt.yticks(
+            range(max_len),
+            labels + [' '] * (max_len - len(labels)),
+        )
+        plt.grid(which="minor", c="w", lw=0.5, linestyle="-")
+    plt.tight_layout()
+    plt.show()
+
+    # look ahead mask
+    # omask.shape [max_len, max_len]
+    # [[ True False False False False False]
+    #  [ True  True False False False False]
+    #  [ True  True  True False False False]
+    #  [ True  True  True  True False False]
+    #  [ True  True  True  True  True False]
+    #  [ True  True  True  True  True  True]]
+    omask = ~np.triu(np.ones((max_len, max_len), dtype=np.bool), 1)
+    # omask.shape [batch_size, max_len, max_len]
+    omask = np.tile(np.expand_dims(omask, axis=0), [np.shape(seqs)[0], 1, 1])
+    # omask.shape [batch_size, max_len, max_len]
+    # [[[0 1 1 1 1 1]
+    #   [0 0 1 1 1 1]
+    #   [0 0 0 1 1 1]
+    #   [0 0 0 1 1 1]
+    #   [0 0 0 1 1 1]
+    #   [0 0 0 1 1 1]]
+    #  [[0 1 1 1 1 1]
+    #   [0 0 1 1 1 1]
+    #   [0 0 0 1 1 1]
+    #   [0 0 0 0 1 1]
+    #   [0 0 0 0 1 1]
+    #   [0 0 0 0 1 1]]
+    #  [[0 1 1 1 1 1]
+    #   [0 0 1 1 1 1]
+    #   [0 0 0 1 1 1]
+    #   [0 0 0 0 1 1]
+    #   [0 0 0 0 0 1]
+    #   [0 0 0 0 0 0]]
+    #  [[0 1 1 1 1 1]
+    #   [0 0 1 1 1 1]
+    #   [0 0 1 1 1 1]
+    #   [0 0 1 1 1 1]
+    #   [0 0 1 1 1 1]
+    #   [0 0 1 1 1 1]]]
+    omask = np.where(omask, pmask, 1)
+
+    plt.rcParams['xtick.bottom'] = plt.rcParams['xtick.labelbottom'] = False
+    plt.rcParams['xtick.top'] = plt.rcParams['xtick.labeltop'] = True
+    for i in range(1, batch_size + 1):
+        plt.subplot(2, 2, i)
+        plt.imshow(omask[i - 1], vmax=1, vmin=0, cmap="YlGn")
+        labels = seqs[i - 1].split(" ")
+        plt.xticks(range(max_len),
+                   labels + [' '] * (max_len - len(labels)),
+                   rotation=45)
+        plt.yticks(
+            range(max_len),
+            labels + [' '] * (max_len - len(labels)),
+        )
+        plt.grid(which="minor", c="w", lw=0.5, linestyle="-")
+    plt.tight_layout()
+    plt.show()
+
+
+def position_embedding():
+    """
+    显示位置编码
+    """
+    max_len = 500
+    num_hiddens = 512
+    pos = np.arange(max_len)[:, None]
+    pe = pos / np.power(10000, 2. * np.arange(num_hiddens)[None, :] /
+                        num_hiddens)  # [max_len, num_hiddens]
+    pe[:, 0::2] = np.sin(pe[:, 0::2])
+    pe[:, 1::2] = np.cos(pe[:, 1::2])
+    plt.imshow(pe, vmax=1, vmin=-1, cmap="rainbow")
+    plt.ylabel("word position")
+    plt.xlabel("embedding dim")
+    plt.show()
+
+
+def transformer_attention_matrix(data: Dict, case: int = 0) -> None:
+    """
+    显示3个注意力权重:
+    1. Encoder self-attention    [len(src), len(src)]
+    2. Decoder self-attention    [len(tgt), len(tgt)]
+    3. Decoder-Encoder attention [len(tgt), len(src)]
+
+    参数:
+    case: 表示样本索引
+    """
+    n_layer = 3
+    n_head = 4
+    # src
+    # e.g. ['0', '7', '-', '0', '8', '-', '0', '5']
+    src = data["src"][case]
+    # tgt
+    # e.g. ['<BOS>', '0', '5', '/', 'Aug', '/', '2', '0', '0', '7', '<EOS>']
+    tgt = data["tgt"][case]
+    attentions = data["attentions"]
+    # 1. Encoder self-attention
+    # encoder_atten: List of [batch_size, n_head, num_steps, num_steps]
+    encoder_atten = attentions["encoder"]
+    # 2. Decoder self-attention
+    # decoder_tgt_atten: List of [batch_size, n_head, num_steps, num_steps]
+    decoder_tgt_atten = attentions["decoder"]["mh1"]
+    # 3. Decoder-Encoder attention
+    # decoder_src_atten: List of [batch_size, n_head, num_steps, num_steps]
+    decoder_src_atten = attentions["decoder"]["mh2"]
+    plt.rcParams['xtick.bottom'] = plt.rcParams['xtick.labelbottom'] = False
+    plt.rcParams['xtick.top'] = plt.rcParams['xtick.labeltop'] = True
+
+    plt.figure(0, (7, 7))
+    plt.suptitle("Encoder self-attention")
+    # 遍历前三层
+    for i in range(n_layer):
+        for j in range(n_head):
+            plt.subplot(3, 4, i * 4 + j + 1)
+            plt.imshow(encoder_atten[i][case, j][:len(src), :len(src)],
+                       vmax=1,
+                       vmin=0,
+                       cmap="rainbow")
+            plt.xticks(range(len(src)), src)
+            plt.yticks(range(len(src)), src)
+            if j == 0:
+                plt.ylabel("layer %i" % (i + 1))
+            if i == 2:
+                plt.xlabel("head %i" % (j + 1))
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.9)
+    plt.show()
+
+    plt.figure(1, (7, 7))
+    plt.suptitle("Decoder self-attention")
+    for i in range(n_layer):
+        for j in range(n_head):
+            plt.subplot(3, 4, i * 4 + j + 1)
+            plt.imshow(decoder_tgt_atten[i][case, j][:len(tgt), :len(tgt)],
+                       vmax=1,
+                       vmin=0,
+                       cmap="rainbow")
+            plt.xticks(range(len(tgt)), tgt, rotation=90, fontsize=7)
+            plt.yticks(range(len(tgt)), tgt, fontsize=7)
+            if j == 0:
+                plt.ylabel("layer %i" % (i + 1))
+            if i == 2:
+                plt.xlabel("head %i" % (j + 1))
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.9)
+    plt.show()
+
+    plt.figure(2, (7, 8))
+    plt.suptitle("Decoder-Encoder attention")
+    for i in range(n_layer):
+        for j in range(n_head):
+            plt.subplot(3, 4, i * 4 + j + 1)
+            plt.imshow(decoder_src_atten[i][case, j][:len(tgt), :len(src)],
+                       vmax=1,
+                       vmin=0,
+                       cmap="rainbow")
+            plt.xticks(range(len(src)), src, fontsize=7)
+            plt.yticks(range(len(tgt)), tgt, fontsize=7)
+            if j == 0:
+                plt.ylabel("layer %i" % (i + 1))
+            if i == 2:
+                plt.xlabel("head %i" % (j + 1))
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.9)
+    plt.show()
+
+
+def transformer_attention_line(data: Dict, case: int = 0) -> None:
+    """
+    显示注意力权重:
+    Decoder-Encoder attention
+
+    参数:
+    case: 表示样本索引
+    """
+    # src
+    # e.g. ['3', '2', '-', '0', '6', '-', '1', '4']
+    src = data["src"][case]
+    # tgt
+    # e.g. ['<BOS>', '1', '4', '/', 'Jun', '/', '2', '0', '3', '2', '<EOS>']
+    tgt = data["tgt"][case]
+    attentions = data["attentions"]
+    # Decoder-Encoder attention
+    # decoder_src_atten: List of [batch_size, n_head, num_steps, num_steps]
+    decoder_src_atten = attentions["decoder"]["mh2"]
+    # tgt_label - 长度为10
+    # e.g. ['<EOS>', '2', '3', '0', '2', '/', 'Jun', '/', '4', '1']
+    tgt_label = tgt[1:11][::-1]
+    # src_label - 长度为10
+    # e.g. ['', '', '4', '1', '-', '6', '0', '-', '2', '3']
+    src_label = ["" for _ in range(2)] + src[::-1]
+    fig, ax = plt.subplots(nrows=2, ncols=2, sharex=True, figsize=(7, 14))
+
+    # n_head=4, 显示4个head的注意力
+    for i in range(2):
+        for j in range(2):
+            # 设置左侧的y轴 - src
+            ax[i, j].set_yticks(np.arange(len(src_label)))
+            ax[i, j].set_yticklabels(src_label, fontsize=9)  # src
+            ax[i, j].set_ylim(0, len(src_label) - 1)
+
+            # 设置右侧的y轴 - tgt
+            ax_ = ax[i, j].twinx()
+            ax_.set_yticks(
+                np.linspace(ax_.get_yticks()[0],
+                            ax_.get_yticks()[-1], len(ax[i, j].get_yticks())))
+            ax_.set_yticklabels(tgt_label, fontsize=9)  # tgt
+            # img获取注意力 [10, 8]
+            img = decoder_src_atten[-1][case, i + j][:10, :8]
+            color = cm.rainbow(np.linspace(0, 1, img.shape[0]))
+            # left_top=8, right_top=10
+            left_top, right_top = img.shape[1], img.shape[0]
+            # 遍历tgt, 每个tgt选一个颜色
+            for ri, c in zip(range(right_top), color):  # tgt
+                for li in range(left_top):  # src
+                    # 取出点[ri, li]的像素值, 像素值越大, alpha值越高
+                    alpha = (img[ri, li] / img[ri].max())**8
+                    # 点A: [0, left_top - li + 1]
+                    # 点B: [right_top - 1 - ri]
+                    # 点A -> 点B的直线
+                    ax[i, j].plot([0, 1],
+                                  [left_top - li + 1, right_top - 1 - ri],
+                                  alpha=alpha,
+                                  c=c)
+            ax[i, j].set_xticks(())
+            ax[i, j].set_xlabel("head %i" % (j + 1 + i * 2))
+            ax[i, j].set_xlim(0, 1)
+    plt.subplots_adjust(top=0.9)
+    plt.tight_layout()
+    plt.show()
 
 
 if __name__ == '__main__':
     device = try_gpu()
-    train(device=device)
-# Chinese time order: yy/mm/dd  ['31-04-26', '04-07-18', '33-06-06']
-# English time order: dd/M/yyyy ['26/Apr/2031', '18/Jul/2004', '06/Jun/2033']
-# Vocabularies:  {'0', 'Nov', '/', '-', '<PAD>', '2', '1', '7', '9', 'Feb',
-#                 '<EOS>', '4', 'Mar', 'Jun', '3', '8', 'May', 'Jul', '<BOS>',
-#                 '6', 'Oct', 'Sep', 'Apr', '5', 'Jan', 'Aug', 'Dec'}
-# x index sample:
-# 31-04-26
-# [6 4 1 3 7 1 5 9]
-# y index sample:
-# <BOS>26/Apr/2031<EOS>
-# [13  5  9  2 15  2  5  3  6  4 14]
-# epoch 0, step 100, loss 0.840, input 84-05-17<PAD><PAD><PAD>, target 17/May/1984<EOS>, inference <BOS>18/Dec/1981<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.48it/s]
-# epoch 1, step 100, loss 0.031, input 83-05-20<PAD><PAD><PAD>, target 20/May/1983<EOS>, inference <BOS>20/May/1983<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.14it/s]
-# epoch 2, step 100, loss 0.007, input 08-05-02<PAD><PAD><PAD>, target 02/May/2008<EOS>, inference <BOS>02/May/2008<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.48it/s]
-# epoch 3, step 100, loss 0.003, input 92-03-19<PAD><PAD><PAD>, target 19/Mar/1992<EOS>, inference <BOS>19/Mar/1992<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.48it/s]
-# epoch 4, step 100, loss 0.002, input 33-10-13<PAD><PAD><PAD>, target 13/Oct/2033<EOS>, inference <BOS>13/Oct/2033<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.74it/s]
-# ...
-# epoch 94, step 100, loss 0.000, input 91-07-20<PAD><PAD><PAD>, target 20/Jul/1991<EOS>, inference <BOS>20/Jul/1991<EOS>: 100%|██████████| 125/125 [00:03<00:00, 36.98it/s]
-# epoch 95, step 100, loss 0.000, input 81-06-22<PAD><PAD><PAD>, target 22/Jun/1981<EOS>, inference <BOS>22/Jun/1981<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.18it/s]
-# epoch 96, step 100, loss 0.000, input 86-10-12<PAD><PAD><PAD>, target 12/Oct/1986<EOS>, inference <BOS>12/Oct/1986<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.40it/s]
-# epoch 97, step 100, loss 0.000, input 30-05-26<PAD><PAD><PAD>, target 26/May/2030<EOS>, inference <BOS>26/May/2030<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.99it/s]
-# epoch 98, step 100, loss 0.000, input 16-10-17<PAD><PAD><PAD>, target 17/Oct/2016<EOS>, inference <BOS>17/Oct/2016<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.54it/s]
-# epoch 99, step 100, loss 0.000, input 84-06-21<PAD><PAD><PAD>, target 21/Jun/1984<EOS>, inference <BOS>21/Jun/1984<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.46it/s]
+    model, data_iter, dataset = train(num_epochs=100, device=device)
+    # Chinese time order: yy/mm/dd  ['31-04-26', '04-07-18', '33-06-06']
+    # English time order: dd/M/yyyy ['26/Apr/2031', '18/Jul/2004', '06/Jun/2033']
+    # Vocabularies:  {'0', 'Nov', '/', '-', '<PAD>', '2', '1', '7', '9', 'Feb',
+    #                 '<EOS>', '4', 'Mar', 'Jun', '3', '8', 'May', 'Jul', '<BOS>',
+    #                 '6', 'Oct', 'Sep', 'Apr', '5', 'Jan', 'Aug', 'Dec'}
+    # x index sample:
+    # 31-04-26
+    # [6 4 1 3 7 1 5 9]
+    # y index sample:
+    # <BOS>26/Apr/2031<EOS>
+    # [13  5  9  2 15  2  5  3  6  4 14]
+    # epoch 0, step 100, loss 0.840, input 84-05-17<PAD><PAD><PAD>, target 17/May/1984<EOS>, inference <BOS>18/Dec/1981<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.48it/s]
+    # epoch 1, step 100, loss 0.031, input 83-05-20<PAD><PAD><PAD>, target 20/May/1983<EOS>, inference <BOS>20/May/1983<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.14it/s]
+    # epoch 2, step 100, loss 0.007, input 08-05-02<PAD><PAD><PAD>, target 02/May/2008<EOS>, inference <BOS>02/May/2008<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.48it/s]
+    # epoch 3, step 100, loss 0.003, input 92-03-19<PAD><PAD><PAD>, target 19/Mar/1992<EOS>, inference <BOS>19/Mar/1992<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.48it/s]
+    # epoch 4, step 100, loss 0.002, input 33-10-13<PAD><PAD><PAD>, target 13/Oct/2033<EOS>, inference <BOS>13/Oct/2033<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.74it/s]
+    # ...
+    # epoch 94, step 100, loss 0.000, input 91-07-20<PAD><PAD><PAD>, target 20/Jul/1991<EOS>, inference <BOS>20/Jul/1991<EOS>: 100%|██████████| 125/125 [00:03<00:00, 36.98it/s]
+    # epoch 95, step 100, loss 0.000, input 81-06-22<PAD><PAD><PAD>, target 22/Jun/1981<EOS>, inference <BOS>22/Jun/1981<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.18it/s]
+    # epoch 96, step 100, loss 0.000, input 86-10-12<PAD><PAD><PAD>, target 12/Oct/1986<EOS>, inference <BOS>12/Oct/1986<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.40it/s]
+    # epoch 97, step 100, loss 0.000, input 30-05-26<PAD><PAD><PAD>, target 26/May/2030<EOS>, inference <BOS>26/May/2030<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.99it/s]
+    # epoch 98, step 100, loss 0.000, input 16-10-17<PAD><PAD><PAD>, target 17/Oct/2016<EOS>, inference <BOS>17/Oct/2016<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.54it/s]
+    # epoch 99, step 100, loss 0.000, input 84-06-21<PAD><PAD><PAD>, target 21/Jun/1984<EOS>, inference <BOS>21/Jun/1984<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.46it/s]
+
+    # 显示:
+    position_embedding()
+    all_mask_kinds()
+    data = export_attention(model, data_iter, dataset, device=device)
+    transformer_attention_matrix(data)
+    transformer_attention_line(data)
