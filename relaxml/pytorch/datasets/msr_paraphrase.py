@@ -175,7 +175,7 @@ class MRPCData(Dataset):
     返回的序列格式:
     <BOS>s1<SEP>s2<SEP><PAD><PAD>...
     """
-    num_seg = 3
+    num_seg = 3  # 一共有多少个segment
     pad_id = PAD_ID
 
     def __init__(self, data_dir: str, rows: int = None) -> None:

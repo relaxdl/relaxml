@@ -768,7 +768,11 @@ class Transformer(nn.Module):
 
     def _look_ahead_mask(self, seqs):
         """
-        e.g. batch_size=2, num_step=4, 则mask:
+        表示seqs序列最多能看多少个steps, 为True的位置会被屏蔽
+        掉不能看. 要注意的是如果seqs有效token比较短, 那么<PAD>
+        的位置也会设置为True
+
+        e.g. batch_size=2, num_step=4, 则mask如下:
         [[[[False,  True,  True,  True],
            [False, False,  True,  True],
            [False, False, False,  True],
@@ -788,14 +792,17 @@ class Transformer(nn.Module):
         batch_size, seq_len = seqs.shape
         # e.g. seq_len=4, mask如下:
         # [[0, 1, 1, 1],
-        # [0, 0, 1, 1],
-        # [0, 0, 0, 1],
-        # [0, 0, 0, 0]]
+        #  [0, 0, 1, 1],
+        #  [0, 0, 0, 1],
+        #  [0, 0, 0, 0]]
         # mask.shape [num_steps, num_steps]
         mask = torch.triu(torch.ones((seq_len, seq_len), dtype=torch.long),
                           diagonal=1).to(device)
 
         # e.g. batch_size=2, seq_len=4, mask如下:
+        # 表示seqs序列最多能看多少个steps, 为1的位置会被屏蔽
+        # 掉不能看. 要注意的是如果seqs有效token比较短, 那么<PAD>
+        # 的位置也会设置为1
         # [[[[0, 1, 1, 1],
         #    [0, 0, 1, 1],
         #    [0, 0, 0, 1],
@@ -810,7 +817,7 @@ class Transformer(nn.Module):
         # mask.shape [batch_size, 1, num_steps, num_steps]
         mask = torch.where(
             self._pad_bool(seqs)[:, None, None, :], 1,
-            mask[None, None, :, :]).to(device)  # [n, 1, seq_len, seq_len]
+            mask[None, None, :, :]).to(device)
 
         # mask.shape [batch_size, 1, num_steps, num_steps]
         return mask > 0
