@@ -193,10 +193,9 @@ def load_date(batch_size: int = 32,
     return data_iter, dataset
 
 
-def pad_zero(seqs: Tensor, max_len: int) -> Tensor:
+def pad_zero(seqs: np.ndarray, max_len: int) -> np.ndarray:
     """
-    >>> x = torch.tensor([[2, 4], 
-                          [3, 4]])
+    >>> x = np.array([[2, 4], [3, 4]])
     >>> padded = pad_zero(x, 4)
     >>> assert padded.shape == (2, 4)
     >>> padded
