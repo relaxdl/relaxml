@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import sys
 import torch
-from torch import Tensor, dtype
+from torch import Tensor
 import torch.nn as nn
 from torch.nn.functional import cross_entropy, softmax, relu
 from torch.utils.data import DataLoader
@@ -1270,6 +1270,7 @@ def transformer_attention_line(data: Dict, case: int = 0) -> None:
                 np.linspace(ax_.get_yticks()[0],
                             ax_.get_yticks()[-1], len(ax[i, j].get_yticks())))
             ax_.set_yticklabels(tgt_label, fontsize=9)  # tgt
+            # 只显示最后一层的注意力
             # img获取注意力 [10, 8]
             img = decoder_src_atten[-1][case, i + j][:10, :8]
             color = cm.rainbow(np.linspace(0, 1, img.shape[0]))
