@@ -1,4 +1,3 @@
-from ast import Try
 import os
 import re
 from typing import Dict, Tuple
@@ -305,7 +304,6 @@ class MRPCSingle(Dataset):
         self.max_len = max([
             len(s) + 2 for s in data["train"]["s1id"] + data["train"]["s2id"]
         ])
-        print(self.max_len)
         x = [[self.token_to_id["<BOS>"]] + data["train"]["s1id"][i] +
              [self.token_to_id["<SEP>"]]
              for i in range(len(data["train"]["s1id"]))]
