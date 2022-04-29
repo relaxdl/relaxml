@@ -127,7 +127,7 @@ def _process_mrpc(
     处理MRPC数据集
 
     1. 数字会被处理成<NUM>
-    2. 包含了4个特殊token: <PAD>, <MASK>, <SEP>, <BOS>
+    2. 包含了4个特殊token: <PAD>, <MASK>, <SEP>, <CLS>
 
     返回: (data, token_to_id, id_to_token)
     data: {
@@ -173,7 +173,7 @@ def _process_mrpc(
     token_to_id["<PAD>"] = PAD_ID
     token_to_id["<MASK>"] = len(token_to_id)
     token_to_id["<SEP>"] = len(token_to_id)
-    token_to_id["<BOS>"] = len(token_to_id)
+    token_to_id["<CLS>"] = len(token_to_id)
     id_to_token = {i: v for v, i in token_to_id.items()}
     for n in ["train", "test"]:
         for m in ["s1", "s2"]:
@@ -187,7 +187,7 @@ class MRPCData(Dataset):
     只用到了训练集的数据
 
     返回的序列格式:
-    <BOS>s1<SEP>s2<SEP><PAD><PAD>...
+    <CLS>s1<SEP>s2<SEP><PAD><PAD>...
     """
     num_seg = 3  # 一共有多少个segment
     pad_id = PAD_ID
@@ -196,7 +196,7 @@ class MRPCData(Dataset):
         data, self.token_to_id, self.id_to_token = _process_mrpc(
             data_dir, rows)
         # 每个句子都处理成如下格式:
-        # <BOS>s1<SEP>s2<SEP><PAD><PAD>...
+        # <CLS>s1<SEP>s2<SEP><PAD><PAD>...
         # 计算出来是: 72
         self.max_len = max([
             len(s1) + len(s2) + 3
@@ -216,7 +216,7 @@ class MRPCData(Dataset):
               len(data["train"]["s2id"][i])]
              for i in range(len(data["train"]["s1id"]))],
             dtype=int)
-        x = [[self.token_to_id["<BOS>"]] + data["train"]["s1id"][i] +
+        x = [[self.token_to_id["<CLS>"]] + data["train"]["s1id"][i] +
              [self.token_to_id["<SEP>"]] + data["train"]["s2id"][i] +
              [self.token_to_id["<SEP>"]] for i in range(len(self.xlen))]
         # x List[List[int]]
@@ -235,8 +235,8 @@ class MRPCData(Dataset):
         #  [1]]
         self.nsp_y = data["train"]["is_same"][:, None]
         # 编码规则:
-        # <BOS>s1<SEP>s2<SEP><PAD><PAD>...
-        # <BOS>s1<SEP> - 0
+        # <CLS>s1<SEP>s2<SEP><PAD><PAD>...
+        # <CLS>s1<SEP> - 0
         # s2<SEP> - 1
         # <PAD> - 2
         # seg[0], e.g.
@@ -305,7 +305,7 @@ class MRPCSingle(Dataset):
     只用到了训练集的数据
 
     返回的序列格式:
-    <BOS>s<SEP><PAD><PAD>...
+    <CLS>s<SEP><PAD><PAD>...
     """
     pad_id = PAD_ID
 
@@ -313,15 +313,15 @@ class MRPCSingle(Dataset):
         data, self.token_to_id, self.id_to_token = _process_mrpc(
             data_dir, rows)
         # 每个句子都处理成如下格式:
-        # <BOS>s<SEP><PAD><PAD>...
+        # <CLS>s<SEP><PAD><PAD>...
         # 计算出来是: 38
         self.max_len = max([
             len(s) + 2 for s in data["train"]["s1id"] + data["train"]["s2id"]
         ])
-        x = [[self.token_to_id["<BOS>"]] + data["train"]["s1id"][i] +
+        x = [[self.token_to_id["<CLS>"]] + data["train"]["s1id"][i] +
              [self.token_to_id["<SEP>"]]
              for i in range(len(data["train"]["s1id"]))]
-        x += [[self.token_to_id["<BOS>"]] + data["train"]["s2id"][i] +
+        x += [[self.token_to_id["<CLS>"]] + data["train"]["s2id"][i] +
               [self.token_to_id["<SEP>"]]
               for i in range(len(data["train"]["s2id"]))]
         # x List[List[int]]
@@ -371,7 +371,7 @@ def load_mrpc_data(batch_size: int = 32,
                    cache_dir: str = '../data') -> Tuple[DataLoader, MRPCData]:
     """
     返回的序列格式:
-    <BOS>s1<SEP>s2<SEP><PAD><PAD>...
+    <CLS>s1<SEP>s2<SEP><PAD><PAD>...
 
     >>> data_iter, dataset = load_mrpc_data(batch_size=32)
     >>> dataset.max_len
@@ -398,7 +398,7 @@ def load_mrpc_single(
         cache_dir: str = '../data') -> Tuple[DataLoader, MRPCSingle]:
     """
     返回的序列格式:
-    <BOS>s<SEP><PAD><PAD>...
+    <CLS>s<SEP><PAD><PAD>...
 
     >>> data_iter, dataset = load_mrpc_single(batch_size=32)
     >>> dataset.max_len
@@ -469,11 +469,11 @@ class ELMo(nn.Module):
         1. 前向语言模型的输出
         2. 后向语言模型的输出
 
-        <BOS>s<SEP>
+        <CLS>s<SEP>
         为什么输入的时间步是num_steps, 输出的时间步是num_steps-1?
         [为了方便理解, 我们假设输入序列没有<PAD>]
         a. 前向语言模型的输入会去掉最后一个token <SEP>, 只预测num_steps-1个token
-        b. 后向语言模型的输入会去掉第一个token <BOS>, 只预测num_steps-1个token
+        b. 后向语言模型的输入会去掉第一个token <CLS>, 只预测num_steps-1个token
            所以前向和后向语言模型的输出都是num_steps-1个时间步对应的特征
 
         >>> batch_size, num_steps, num_hiddens, n_layers = 2, 10, 256, 2
@@ -570,12 +570,12 @@ class ELMo(nn.Module):
         """
         获取word embedding
 
-        <BOS>s<SEP>
+        <CLS>s<SEP>
         为什么输入的时间步是num_steps, 输出的时间步是num_steps-2? 
         [为了方便理解, 我们假设输入序列没有<PAD>]
         a. 前向语言模型的输入会去掉最后一个token <SEP>, 只预测num_steps-1个token, 
-           在预测完成后, 会把<BOS>对应的输出去掉, 只保留num_steps-2个时间步输出
-        b. 后向语言模型的输入会去掉第一个token <BOS>, 只预测num_steps-1个token, 
+           在预测完成后, 会把<CLS>对应的输出去掉, 只保留num_steps-2个时间步输出
+        b. 后向语言模型的输入会去掉第一个token <CLS>, 只预测num_steps-1个token, 
            在预测完成后, 会把<SEP>对应的输出去掉, 只保留num_steps-2个时间步输出
            所以前向和后向语言模型的输出都是num_steps-2个时间步的特征,也就是`s`对应的特征 
 
@@ -703,18 +703,18 @@ if __name__ == "__main__":
     print(seqs_embed)
 
 #  0%|          | 0/62 [00:00<?, ?it/s]
-#  | tgt: <BOS> mahmud was seized near tikrit , the area from which he and saddam hail , about <NUM> kilometres north-west of baghdad , us military officials said . <SEP>,
+#  | tgt: <CLS> mahmud was seized near tikrit , the area from which he and saddam hail , about <NUM> kilometres north-west of baghdad , us military officials said . <SEP>,
 #  | f_prd: russian kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen,
 #  | b_prd: bobby bobby bobby bobby bobby bobby bobby bobby bobby advertisement advertisement advertisement advertisement evaluation evaluation evaluation evaluation evaluation evaluation evaluation evaluation evaluation evaluation evaluation evaluation evaluation subcommittee subcommittee subcommittee subcommittee subcommittee subcommittee subcommittee subcommittee bobby chapman chapman
 # epoch 0, step 0, train loss 9.469:  81%|████████  | 50/62 [00:02<00:00, 19.33it/s]
-#  | tgt: <BOS> park appeared to have been strangled and may have been sexually assaulted , homicide capt. charles bloom said . <SEP>,
+#  | tgt: <CLS> park appeared to have been strangled and may have been sexually assaulted , homicide capt. charles bloom said . <SEP>,
 #  | f_prd: the the , , , , , , , , , , ,,
 #  | b_prd: the the the the the the the the the the the the the the ,
 #  ...
 #  epoch 99, step 0, train loss 0.081:  81%|████████  | 50/62 [00:02<00:00, 17.59it/s]
-#  | tgt: <BOS> the virus spreads when unsuspecting computer users open file attachments in emails that contain familiar headings like <quote> thank you ! <quote> and <quote> re : details <quote> . <SEP>,
+#  | tgt: <CLS> the virus spreads when unsuspecting computer users open file attachments in emails that contain familiar headings like <quote> thank you ! <quote> and <quote> re : details <quote> . <SEP>,
 #  | f_prd: the virus spreads when unsuspecting computer users open file attachments in emails that contain familiar headings like <quote> thank you ! <quote> and <quote> re : details <quote> . <SEP>,
-#  | b_prd: <BOS> the virus spreads when unsuspecting computer users open file attachments in emails that contain familiar headings like <quote> thank you ! <quote> and <quote> re : details <quote> . <SEP>
+#  | b_prd: <CLS> the virus spreads when unsuspecting computer users open file attachments in emails that contain familiar headings like <quote> thank you ! <quote> and <quote> re : details <quote> . <SEP>
 # epoch 99, step 50, train loss 0.082: 100%|██████████| 62/62 [00:03<00:00, 17.62it/s]
 # train loss 0.083, 1176.7 examples/sec on cuda:0
 
