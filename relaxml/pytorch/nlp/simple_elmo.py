@@ -3,6 +3,7 @@ import re
 from typing import Dict, List, Tuple
 import requests
 import sys
+import time
 import hashlib
 import zipfile
 import tarfile
@@ -13,6 +14,7 @@ import torch.nn as nn
 from torch import Tensor, optim
 from torch.nn.functional import cross_entropy
 from torch.utils.data import Dataset, DataLoader
+from matplotlib import pyplot as plt
 from tqdm import tqdm
 """
 Simple ELMo
@@ -187,7 +189,7 @@ class MRPCData(Dataset):
     返回的序列格式:
     <BOS>s1<SEP>s2<SEP><PAD><PAD>...
     """
-    num_seg = 3
+    num_seg = 3  # 一共有多少个segment
     pad_id = PAD_ID
 
     def __init__(self, data_dir: str, rows: int = None) -> None:
@@ -422,7 +424,7 @@ class ELMo(nn.Module):
         参数:
         vocab_size: 词典大小
         num_hiddens: LSTM num_hiddens
-        n_layers: LSTM单元数量
+        n_layers: LSTM层数
         lr: 
         """
         super().__init__()
@@ -464,6 +466,16 @@ class ELMo(nn.Module):
 
     def forward(self, seqs: Tensor) -> Tuple[List[Tensor], List[Tensor]]:
         """
+        1. 前向语言模型的输出
+        2. 后向语言模型的输出
+
+        <BOS>s<SEP>
+        为什么输入的时间步是num_steps, 输出的时间步是num_steps-1?
+        [为了方便理解, 我们假设输入序列没有<PAD>]
+        a. 前向语言模型的输入会去掉最后一个token <SEP>, 只预测num_steps-1个token
+        b. 后向语言模型的输入会去掉第一个token <BOS>, 只预测num_steps-1个token
+           所以前向和后向语言模型的输出都是num_steps-1个时间步对应的特征
+
         >>> batch_size, num_steps, num_hiddens, n_layers = 2, 10, 256, 2
         >>> model = ELMo(vocab_size=10000,
                          num_hiddens=num_hiddens,
@@ -479,13 +491,13 @@ class ELMo(nn.Module):
         seqs: [batch_size, num_steps]
 
         返回: (fxs, bxs)
-        fxs: List of [batch_size, num_steps-1, num_hiddens] 前向传播所有层的输出(元素的数量是n_layers + 1)
-        bxs: List of [batch_size, num_steps-1, num_hiddens] 后向传播所有层的输出(元素的数量是n_layers + 1)
+        fxs: List of [batch_size, num_steps-1, num_hiddens] 前向语言模型所有层的输出(元素的数量是n_layers + 1)
+        bxs: List of [batch_size, num_steps-1, num_hiddens] 后向语言模型所有层的输出(元素的数量是n_layers + 1)
         """
         device = next(self.parameters()).device
         # embedded.shape [batch_size, num_steps, num_hiddens]
         embedded = self.word_embed(seqs)
-        # LSTM前向和后向传播的输入:
+        # LSTM前向和后向语言模型的输入:
         # fxs List of [batch_size, num_steps-1, num_hiddens]
         # bxs List of [batch_size, num_steps-1, num_hiddens]
         fxs = [embedded[:, :-1, :]]
@@ -524,19 +536,22 @@ class ELMo(nn.Module):
     def step(self, seqs: Tensor) -> Tuple[np.ndarray, Tuple[Tensor, Tensor]]:
         """
         训练一个批量的数据
+        1. 前向语言模型的输出, 计算Loss
+        2. 后向语言模型的输出, 计算Loss
+        3. 将前向语言模型的Loss和后向语言模型的Loss相加作为最终的Loss
 
         参数:
         seqs: [batch_size, num_steps]
 
         返回: (loss, (fo, bo))
         loss: 标量
-        fo: [batch_size, num_steps-1, vocab_size] 前向传播的输出
-        bo: [batch_size, num_steps-1, vocab_size] 后向传播的输出
+        fo: [batch_size, num_steps-1, vocab_size] 前向语言模型的输出
+        bo: [batch_size, num_steps-1, vocab_size] 后向语言模型的输出
         """
         self.optimizer.zero_grad()
         # List元素的数量是n_layers + 1
-        # fo: List of [batch_size, num_steps-1, num_hiddens] 前向传播所有层的输出
-        # bo: List of [batch_size, num_steps-1, num_hiddens] 后向传播所有层的输出
+        # fo: List of [batch_size, num_steps-1, num_hiddens] 前向语言模型所有层的输出
+        # bo: List of [batch_size, num_steps-1, num_hiddens] 后向语言模型所有层的输出
         fo, bo = self(seqs)
         # fo.shape [batch_size, num_steps-1, vocab_size]
         # bo.shape [batch_size, num_steps-1, vocab_size]
@@ -555,6 +570,15 @@ class ELMo(nn.Module):
         """
         获取word embedding
 
+        <BOS>s<SEP>
+        为什么输入的时间步是num_steps, 输出的时间步是num_steps-2? 
+        [为了方便理解, 我们假设输入序列没有<PAD>]
+        a. 前向语言模型的输入会去掉最后一个token <SEP>, 只预测num_steps-1个token, 
+           在预测完成后, 会把<BOS>对应的输出去掉, 只保留num_steps-2个时间步输出
+        b. 后向语言模型的输入会去掉第一个token <BOS>, 只预测num_steps-1个token, 
+           在预测完成后, 会把<SEP>对应的输出去掉, 只保留num_steps-2个时间步输出
+           所以前向和后向语言模型的输出都是num_steps-2个时间步的特征,也就是`s`对应的特征 
+
         >>> batch_size, num_steps, num_hiddens, n_layers = 2, 10, 256, 2
         >>> model = ELMo(vocab_size=10000,
                          num_hiddens=num_hiddens,
@@ -572,11 +596,10 @@ class ELMo(nn.Module):
         xs: List of [batch_size, num_steps-2, num_hiddens*2]
         """
         device = next(self.parameters()).device
-        seqs.to(device)
         # List元素的数量是n_layers + 1
-        # fxs: List of [batch_size, num_steps-1, num_hiddens] 前向传播所有层的输出
-        # bxs: List of [batch_size, num_steps-1, num_hiddens] 后向传播所有层的输出
-        fxs, bxs = self(seqs)
+        # fxs: List of [batch_size, num_steps-1, num_hiddens] 前向语言模型所有层的输出
+        # bxs: List of [batch_size, num_steps-1, num_hiddens] 后向语言模型所有层的输出
+        fxs, bxs = self(seqs.to(device))
         xs = [
             torch.cat((fxs[0][:, 1:, :], bxs[0][:, :-1, :]),
                       dim=2).cpu().data.numpy()
@@ -594,42 +617,143 @@ def try_gpu(i: int = 0) -> torch.device:
 
 
 def train(num_epochs: int = 1,
-          batch_size=32,
+          batch_size=64,
           num_hiddens=256,
           n_layers=2,
           lr=2e-3,
-          device: torch.device = None):
+          device: torch.device = None) -> Tuple[ELMo, MRPCSingle]:
     data_iter, dataset = load_mrpc_single(batch_size=batch_size, rows=2000)
     model = ELMo(vocab_size=dataset.num_word,
                  num_hiddens=num_hiddens,
                  n_layers=n_layers,
                  lr=lr)
     model = model.to(device)
+    times = []
+    history = [[]]  # 记录: 训练集损失, 方便后续绘图
+    num_batches = len(data_iter)
     for epoch in range(num_epochs):
+        # 训练
+        metric_train = [0.0] * 2  # 统计: 训练集损失之和, 训练集样本数量之和
         data_iter_tqdm = tqdm(data_iter, file=sys.stdout)
         for i, batch in enumerate(data_iter_tqdm):
+            t_start = time.time()
             batch = batch.type(torch.LongTensor).to(device)
             # assert batch.shape == (batch_size, 38)
+            # fo: [batch_size, num_steps-1, vocab_size] 前向语言模型的输出
+            # bo: [batch_size, num_steps-1, vocab_size] 后向语言模型的输出
             loss, (fo, bo) = model.step(batch)
-            if i % 20 == 0:
+            with torch.no_grad():
+                metric_train[0] += float(loss * batch.shape[0])
+                metric_train[1] += float(batch.shape[0])
+            times.append(time.time() - t_start)
+            train_loss = metric_train[0] / metric_train[1]
+            if i % 50 == 0:
+                # fp.shape [num_steps-1, ]
+                # bp.shape [num_steps-1, ]
                 fp = fo[0].cpu().data.numpy().argmax(axis=1)
                 bp = bo[0].cpu().data.numpy().argmax(axis=1)
+                # label
                 tgt = " ".join([
                     dataset.id_to_token[i]
                     for i in batch[0].cpu().data.numpy() if i != dataset.pad_id
                 ])
+                # 前向语言模型的输出
                 f_prd = " ".join([
                     dataset.id_to_token[i] for i in fp if i != dataset.pad_id
                 ])
+                # 后向语言模型的输出
                 b_prd = " ".join([
                     dataset.id_to_token[i] for i in bp if i != dataset.pad_id
                 ])
-                data_iter_tqdm.desc = f'epoch {epoch}, step {i}, loss {loss:.3f}'
+                history[0].append((epoch + (i + 1) / num_batches, train_loss))
+                data_iter_tqdm.desc = f'epoch {epoch}, step {i}, train loss {train_loss:.3f}'
                 print(
-                    f'\n | tgt: {tgt}, \n | f_prd {f_prd}, \n | b_prd {b_prd}')
-    return model
+                    f'\n | tgt: {tgt}, \n | f_prd: {f_prd}, \n | b_prd: {b_prd}'
+                )
+
+    print(
+        f'train loss {train_loss:.3f}, {metric_train[1] * num_epochs / sum(times):.1f} '
+        f'examples/sec on {str(device)}')
+
+    plt.figure(figsize=(6, 4))
+    # 训练集损失
+    plt.plot(*zip(*history[0]), '-', label='train loss')
+    plt.xlabel('epoch')
+    # 从epoch=1开始显示, 0-1这个范围的数据丢弃不展示,
+    # 因为只有训练完成1个epochs之后, 才会有第一条test acc记录
+    plt.xlim((1, num_epochs))
+    plt.grid()
+    plt.legend()
+    plt.show()
+    return model, dataset
 
 
 if __name__ == "__main__":
     device = try_gpu()
-    train(device=device)
+    model, dataset = train(num_epochs=100, n_layers=2, device=device)
+    seqs = dataset.sample(1)
+    seqs_embed = model.get_embedding(torch.tensor(seqs))
+    # batch_size=1, n_layers=2
+    assert seqs_embed[0].shape == (1, dataset.max_len - 2,
+                                   model.num_hiddens * 2)
+    assert seqs_embed[1].shape == (1, dataset.max_len - 2,
+                                   model.num_hiddens * 2)
+    assert seqs_embed[2].shape == (1, dataset.max_len - 2,
+                                   model.num_hiddens * 2)
+    print(seqs_embed)
+
+#  0%|          | 0/62 [00:00<?, ?it/s]
+#  | tgt: <BOS> mahmud was seized near tikrit , the area from which he and saddam hail , about <NUM> kilometres north-west of baghdad , us military officials said . <SEP>,
+#  | f_prd: russian kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen kathleen,
+#  | b_prd: bobby bobby bobby bobby bobby bobby bobby bobby bobby advertisement advertisement advertisement advertisement evaluation evaluation evaluation evaluation evaluation evaluation evaluation evaluation evaluation evaluation evaluation evaluation evaluation subcommittee subcommittee subcommittee subcommittee subcommittee subcommittee subcommittee subcommittee bobby chapman chapman
+# epoch 0, step 0, train loss 9.469:  81%|████████  | 50/62 [00:02<00:00, 19.33it/s]
+#  | tgt: <BOS> park appeared to have been strangled and may have been sexually assaulted , homicide capt. charles bloom said . <SEP>,
+#  | f_prd: the the , , , , , , , , , , ,,
+#  | b_prd: the the the the the the the the the the the the the the ,
+#  ...
+#  epoch 99, step 0, train loss 0.081:  81%|████████  | 50/62 [00:02<00:00, 17.59it/s]
+#  | tgt: <BOS> the virus spreads when unsuspecting computer users open file attachments in emails that contain familiar headings like <quote> thank you ! <quote> and <quote> re : details <quote> . <SEP>,
+#  | f_prd: the virus spreads when unsuspecting computer users open file attachments in emails that contain familiar headings like <quote> thank you ! <quote> and <quote> re : details <quote> . <SEP>,
+#  | b_prd: <BOS> the virus spreads when unsuspecting computer users open file attachments in emails that contain familiar headings like <quote> thank you ! <quote> and <quote> re : details <quote> . <SEP>
+# epoch 99, step 50, train loss 0.082: 100%|██████████| 62/62 [00:03<00:00, 17.62it/s]
+# train loss 0.083, 1176.7 examples/sec on cuda:0
+
+# [array([[[ 0.05387652, -0.04249076, -0.03359022, ..., -0.36145794,
+#           0.11110107,  0.04699127],
+#         [-0.43760943, -0.5471494 ,  0.25696278, ...,  0.16304107,
+#          -0.1460312 , -0.09358664],
+#         [ 0.0399789 , -0.02279772, -0.00664673, ...,  0.02148606,
+#           0.13215391, -0.24494432],
+#         ...,
+#         [-0.07855224, -0.01864053, -0.13800192, ...,  0.01080701,
+#           0.00575976, -0.22055142],
+#         [-0.07855224, -0.01864053, -0.13800192, ...,  0.01080701,
+#           0.00575976, -0.22055142],
+#         [-0.07855224, -0.01864053, -0.13800192, ...,  0.01080701,
+#           0.00575976, -0.22055142]]], dtype=float32),
+#  array([[[-0.32678542,  0.6005682 , -0.10090934, ..., -0.92173153,
+#           0.68911225, -0.88571525],
+#         [-0.31465816,  0.92574674, -0.14408377, ..., -0.7894057 ,
+#           0.81313306, -0.89674824],
+#         [ 0.19937621,  0.88581014, -0.7318176 , ..., -0.04746273,
+#           0.2766613 , -0.55096245],
+#         ...,
+#         [ 0.99649435,  0.00213287, -0.01244336, ..., -0.9919704 ,
+#           0.91012484, -0.7655429 ],
+#         [ 0.9965578 ,  0.00212413, -0.01233385, ..., -0.9610363 ,
+#           0.79090196, -0.7644018 ],
+#         [ 0.9966095 ,  0.00211652, -0.01225281, ..., -0.7560811 ,
+#           0.63349926, -0.687821  ]]], dtype=float32),
+#  array([[[ 9.4487276e-03, -9.1714966e-01,  7.6054967e-08, ...,
+#          -5.1124297e-02, -1.0000000e+00,  9.7178179e-01],
+#         [-9.6940628e-04, -1.4650412e-05,  5.8076540e-07, ...,
+#          -7.0563848e-03, -1.0000000e+00,  9.9972230e-01],
+#         [-2.8542667e-03, -3.7459372e-08,  9.9911135e-01, ...,
+#          -2.3028527e-03, -3.5979284e-03,  9.8125929e-01],
+#         ...,
+#         [-1.0000000e+00, -1.5551449e-01,  9.9999952e-01, ...,
+#          -1.0000000e+00, -9.9245912e-01,  7.6356888e-01],
+#         [-1.0000000e+00, -1.9207367e-01,  9.9999964e-01, ...,
+#          -1.0000000e+00, -9.5365834e-01,  7.6180118e-01],
+#         [-1.0000000e+00, -2.1376705e-01,  9.9999964e-01, ...,
+#          -1.0000000e+00, -7.1479720e-01,  7.5166637e-01]]], dtype=float32)]
