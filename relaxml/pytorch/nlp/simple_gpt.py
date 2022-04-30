@@ -753,7 +753,8 @@ class GPT(nn.Module):
         nsp_logits = self.task_nsp(z.reshape(z.shape[0], -1))
         return mlm_logits, nsp_logits
 
-    def step(self, seqs, segs, seqs_, nsp_labels):
+    def step(self, seqs: Tensor, segs: Tensor, seqs_: Tensor,
+             nsp_labels: Tensor) -> Tuple[Tensor, Tensor]:
         """
         训练一个批量的数据
 
