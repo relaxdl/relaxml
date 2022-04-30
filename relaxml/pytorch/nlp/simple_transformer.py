@@ -1313,7 +1313,7 @@ def transformer_attention_line(data: Dict, case: int = 0) -> None:
                     # 取出点[ri, li]的像素值, 像素值越大, alpha值越高
                     alpha = (img[ri, li] / img[ri].max())**8
                     # 点A: [0, left_top - li + 1]
-                    # 点B: [right_top - 1 - ri]
+                    # 点B: [1, right_top - 1 - ri]
                     # 点A -> 点B的直线
                     ax[i, j].plot([0, 1],
                                   [left_top - li + 1, right_top - 1 - ri],
