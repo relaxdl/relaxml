@@ -226,7 +226,7 @@ class DotProductAttention(nn.Module):
         scores = torch.bmm(queries, keys.transpose(1, 2)) / math.sqrt(d)
         # self.attention_weights.shape [batch_size, num_queries, num_kvs]
         self.attention_weights = masked_softmax(scores, valid_lens)
-        # output.shape: [batch_size, num_queries, value_size]
+        # output.shape [batch_size, num_queries, value_size]
         return torch.bmm(self.dropout(self.attention_weights), values)
 
 

@@ -138,7 +138,7 @@ class TokenEmbedding:
         embedding_name: 'glove.6B.50d' | 'glove.6B.100d'
         """
         # index_to_token: list of token
-        # idx_to_vec.shape: [num_tokens, embed_size]
+        # idx_to_vec.shape [num_tokens, embed_size]
         self.idx_to_token, self.idx_to_vec = self._load_embedding(
             embedding_name)
         self.unknown_idx = 0  # <unk>对应的idx
@@ -162,7 +162,7 @@ class TokenEmbedding:
 
         返回: (idx_to_token, idx_to_vec)
         idx_to_token: list of token
-        idx_to_vec.shape: [num_tokens, embed_size]
+        idx_to_vec [num_tokens, embed_size]
         """
         # idx_to_token: list of token
         # idx_to_vec: list of vector, 每个vector是一个float list
@@ -215,12 +215,12 @@ def knn(W: Tensor, x: Tensor, k: int) -> Tuple[Tensor, List[float]]:
     要注意: 返回的第一个词一定是自己(自己和自己的相似度最高)
 
     # 输入:
-    W.shape: [num_tokens, embed_size], 就是TokenEmbedding.idx_to_vec
-    x.shape: [embed_size,] 词向量
+    W [num_tokens, embed_size], 就是TokenEmbedding.idx_to_vec
+    x [embed_size,] 词向量
     k: 最近的k个token
 
     返回: (topk, cos)
-    topk.shape: [k, ] 表示最接近x的K个token的token_id
+    topk [k, ] 表示最接近x的K个token的token_id
     cos: list of cos, 表示最接近的x的K个词计算出来的余弦相似度的值 
     """
     # 增加1e-9以获得数值稳定性

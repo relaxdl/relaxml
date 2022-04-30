@@ -635,7 +635,7 @@ def train(batch_size: int, max_window_size: int, num_noise_words: int,
 
 def get_similar_tokens(query_token: str, k: int, vocab: Vocab,
                        embed: nn.Embedding) -> None:
-    # W.shape: [vocab_size, embed_size], 表示vocab中所有的词的词向量
+    # W.shape [vocab_size, embed_size], 表示vocab中所有的词的词向量
     W = embed.weight.data
     x = W[vocab[query_token]]
     # 计算余弦相似性, 增加1e-9以获得数值稳定性

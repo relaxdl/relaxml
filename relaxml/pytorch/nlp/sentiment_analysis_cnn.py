@@ -324,8 +324,8 @@ class TextCNN(nn.Module):
         # embeddings经过conv形状变成: [batch_size, 每个卷积核自己的out_channels, new_num_steps]
         # 经过self.pool处理后形状变成: [batch_size, 每个卷积核自己的out_channels, 1]
         # 经过torch.squeeze处理后形状变成: [batch_size, 每个卷积核自己的out_channels]
-        # encoding.shape: [batch_size, 所有卷积核的out_channels之和] 也就是
-        #                 [batch_size, sum(num_channels)]
+        # encoding.shape [batch_size, 所有卷积核的out_channels之和] 也就是
+        #                [batch_size, sum(num_channels)]
         encoding = torch.cat([
             torch.squeeze(self.relu(self.pool(conv(embeddings))), dim=-1)
             for conv in self.convs
@@ -449,7 +449,7 @@ class TokenEmbedding:
         embedding_name: 'glove.6B.50d' | 'glove.6B.100d'
         """
         # index_to_token: list of token
-        # idx_to_vec.shape: [num_tokens, embed_size]
+        # idx_to_vec.shape [num_tokens, embed_size]
         self.idx_to_token, self.idx_to_vec = self._load_embedding(
             embedding_name)
         self.unknown_idx = 0  # <unk>对应的idx
@@ -473,7 +473,7 @@ class TokenEmbedding:
 
         返回: (idx_to_token, idx_to_vec)
         idx_to_token: list of token
-        idx_to_vec.shape: [num_tokens, embed_size]
+        idx_to_vec [num_tokens, embed_size]
         """
         # idx_to_token: list of token
         # idx_to_vec: list of vector, 每个vector是一个float list
@@ -542,8 +542,8 @@ def accuracy(y_hat: Tensor, y: Tensor) -> Tensor:
     计算预测正确的数量
 
     参数:
-    y_hat.shape: [batch_size, num_classes]
-    y.shape: [batch_size,]
+    y_hat [batch_size, num_classes]
+    y [batch_size,]
     """
     _, predicted = torch.max(y_hat, 1)
     cmp = predicted.type(y.dtype) == y

@@ -33,10 +33,10 @@ def lenet() -> nn.Module:
     >>> assert net(x).shape == (256, 10)
 
     输入:
-    x.shape: [batch_size, 1, 28, 28]
+    x [batch_size, 1, 28, 28]
 
     输出:
-    output.shape: [batch_size, 10]
+    output [batch_size, 10]
     """
     net = nn.Sequential(
         # output [batch_size, 1, 28, 28]
@@ -117,8 +117,8 @@ def accuracy(y_hat: Tensor, y: Tensor) -> Tensor:
     计算预测正确的数量
 
     参数:
-    y_hat.shape: [batch_size, num_classes]
-    y.shape: [batch_size,]
+    y_hat [batch_size, num_classes]
+    y [batch_size,]
     """
     _, predicted = torch.max(y_hat, 1)
     cmp = predicted.type(y.dtype) == y

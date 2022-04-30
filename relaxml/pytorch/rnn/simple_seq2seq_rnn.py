@@ -296,9 +296,9 @@ class Seq2Seq(nn.Module):
             o = o.argmax(dim=1).view(-1, 1)
 
             # 预测出来的词作为下一次预测的输入:
-            # dec_in.shape: [batch_size, 1, embed_size]
-            #            -> [1, batch_size, embed_size]
-            #            -> [batch_size, embed_size]
+            # dec_in.shape [batch_size, 1, embed_size]
+            #           -> [1, batch_size, embed_size]
+            #           -> [batch_size, embed_size]
             dec_in = self.dec_embeddings(o).permute(1, 0, 2)[0]
             output.append(o)
         # output.shape [max_pred_len, batch_size, 1]

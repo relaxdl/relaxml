@@ -447,7 +447,7 @@ class TokenEmbedding:
         embedding_name: 'glove.6B.50d' | 'glove.6B.100d'
         """
         # index_to_token: list of token
-        # idx_to_vec.shape: [num_tokens, embed_size]
+        # idx_to_vec.shape [num_tokens, embed_size]
         self.idx_to_token, self.idx_to_vec = self._load_embedding(
             embedding_name)
         self.unknown_idx = 0  # <unk>对应的idx
@@ -471,7 +471,7 @@ class TokenEmbedding:
 
         返回: (idx_to_token, idx_to_vec)
         idx_to_token: list of token
-        idx_to_vec.shape: [num_tokens, embed_size]
+        idx_to_vec [num_tokens, embed_size]
         """
         # idx_to_token: list of token
         # idx_to_vec: list of vector, 每个vector是一个float list
@@ -540,8 +540,8 @@ def accuracy(y_hat: Tensor, y: Tensor) -> Tensor:
     计算预测正确的数量
 
     参数:
-    y_hat.shape: [batch_size, num_classes]
-    y.shape: [batch_size,]
+    y_hat [batch_size, num_classes]
+    y [batch_size,]
     """
     _, predicted = torch.max(y_hat, 1)
     cmp = predicted.type(y.dtype) == y

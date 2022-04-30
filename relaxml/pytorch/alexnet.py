@@ -27,10 +27,10 @@ def alexnet() -> nn.Module:
     >>> assert net(x).shape == (256, 10)
 
     输入:
-    x.shape: [batch_size, 1, 224, 224)
+    x [batch_size, 1, 224, 224)
 
     输出:
-    output.shape: [batch_size, 10]
+    output [batch_size, 10]
     """
     net = nn.Sequential(
         # 这里, 我们使用一个11*11的更大窗口来捕捉对象
@@ -135,8 +135,8 @@ def accuracy(y_hat: Tensor, y: Tensor) -> Tensor:
     计算预测正确的数量
 
     参数:
-    y_hat.shape: [batch_size, num_classes]
-    y.shape: [batch_size,]
+    y_hat [batch_size, num_classes]
+    y [batch_size,]
     """
     _, predicted = torch.max(y_hat, 1)
     cmp = predicted.type(y.dtype) == y

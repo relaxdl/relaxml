@@ -276,8 +276,8 @@ class Seq2SeqAttention(nn.Module):
         # h.shape [1, batch_size, hidden_size]
         # c.shape [1, batch_size, hidden_size]
         o, hx, cx = self.encode(x)
-        # hx.shape: [batch_size, hidden_size]
-        # cx.shape: [batch_size, hidden_size]
+        # hx.shape [batch_size, hidden_size]
+        # cx.shape [batch_size, hidden_size]
         hx, cx = hx[0], cx[0]
 
         # start.shape [batch_size, 1]
@@ -367,8 +367,8 @@ class Seq2SeqAttention(nn.Module):
         # h.shape [1, batch_size, hidden_size]
         # c.shape [1, batch_size, hidden_size]
         o, hx, cx = self.encode(x)
-        # hx.shape: [batch_size, hidden_size]
-        # cx.shape: [batch_size, hidden_size]
+        # hx.shape [batch_size, hidden_size]
+        # cx.shape [batch_size, hidden_size]
         hx, cx = hx[0], cx[0]
 
         # dec_in.shape [batch_size, num_steps_y-1], 去掉了y中最后一个token: <EOS>

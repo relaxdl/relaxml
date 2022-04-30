@@ -67,26 +67,26 @@ def channel_shuffle(x: Tensor, groups: int) -> Tensor:
     3. Flatten: 将置换后的通道Flatten后就完成了Channel Shuffle
 
     参数:
-    x.shape: [batch_size, channels, height, width]
+    x [batch_size, channels, height, width]
     groups: group的数量
 
     返回:
-    output.shape: [batch_size, channels, height, width]
+    output [batch_size, channels, height, width]
     """
     batchsize, num_channels, height, width = x.size()
     channels_per_group = num_channels // groups  # 每个group有多少个channel
 
     # reshape
-    # x.shape: [batch_size, channels, height, width] ->
-    #          [batch_size, groups, channels_per_group, height, width]
+    # x.shape [batch_size, channels, height, width] ->
+    #         [batch_size, groups, channels_per_group, height, width]
     x = x.view(batchsize, groups, channels_per_group, height, width)
 
     # transpose
-    # x.shape: [batch_size, channels_per_group, groups, height, width]
+    # x.shape [batch_size, channels_per_group, groups, height, width]
     x = torch.transpose(x, 1, 2).contiguous()
 
     # flatten
-    # x.shape: [batch_size, channels, height, width]
+    # x.shape [batch_size, channels, height, width]
     x = x.view(batchsize, -1, height, width)
 
     return x

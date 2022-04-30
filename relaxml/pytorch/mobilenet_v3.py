@@ -137,7 +137,7 @@ class SqueezeExcitation(nn.Module):
         self.fc2 = nn.Conv2d(squeeze_c, input_c, 1)
 
     def forward(self, x: Tensor) -> Tensor:
-        # scale.shape: [batch_size, 1, 1, c]
+        # scale.shape [batch_size, 1, 1, c]
         scale = F.adaptive_avg_pool2d(x, output_size=(1, 1))
         scale = self.fc1(scale)
         scale = F.relu(scale, inplace=True)
@@ -638,8 +638,8 @@ def accuracy(y_hat: Tensor, y: Tensor) -> Tensor:
     计算预测正确的数量
 
     参数:
-    y_hat.shape: [batch_size, num_classes]
-    y.shape: [batch_size,]
+    y_hat [batch_size, num_classes]
+    y [batch_size,]
     """
     _, predicted = torch.max(y_hat, 1)
     cmp = predicted.type(y.dtype) == y
