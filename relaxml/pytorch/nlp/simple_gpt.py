@@ -942,6 +942,10 @@ def train(
                 data_iter_tqdm.desc = f'epoch {epoch}, step {i}, train loss {train_loss:.3f}'
                 print(f'\n | tgt: {tgt}, \n | prd: {prd}')
 
+    print(
+        f'train loss {train_loss:.3f}, {metric_train[1] * num_epochs / sum(times):.1f} '
+        f'examples/sec on {str(device)}')
+
     plt.figure(figsize=(6, 4))
     # 训练集损失
     plt.plot(*zip(*history[0]), '-', label='train loss')

@@ -978,6 +978,10 @@ def train(
                 data_iter_tqdm.desc = f'epoch {epoch}, step {i}, train loss {train_loss:.3f}, ' \
                     f'input {src}, target {target}, inference {res}'
 
+    print(
+        f'train loss {train_loss:.3f}, {metric_train[1] * num_epochs / sum(times):.1f} '
+        f'examples/sec on {str(device)}')
+
     plt.figure(figsize=(6, 4))
     # 训练集损失
     plt.plot(*zip(*history[0]), '-', label='train loss')
@@ -1106,7 +1110,7 @@ def all_mask_kinds():
     #  [ True  True  True  True False False]
     #  [ True  True  True  True  True False]
     #  [ True  True  True  True  True  True]]
-    omask = ~np.triu(np.ones((max_len, max_len), dtype=np.bool), 1)
+    omask = ~np.triu(np.ones((max_len, max_len), dtype=np.bool_), 1)
     # omask.shape [batch_size, max_len, max_len]
     omask = np.tile(np.expand_dims(omask, axis=0), [np.shape(seqs)[0], 1, 1])
     # omask.shape [batch_size, max_len, max_len]

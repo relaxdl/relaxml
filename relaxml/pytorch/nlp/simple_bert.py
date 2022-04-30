@@ -1123,6 +1123,10 @@ def train(
                     f'\n | tgt: {tgt}, \n | prd: {prd}, \n | tgt word: {tgt_word}, \n | prd word: {prd_word}'
                 )
 
+    print(
+        f'train loss {train_loss:.3f}, {metric_train[1] * num_epochs / sum(times):.1f} '
+        f'examples/sec on {str(device)}')
+
     plt.figure(figsize=(6, 4))
     # 训练集损失
     plt.plot(*zip(*history[0]), '-', label='train loss')
