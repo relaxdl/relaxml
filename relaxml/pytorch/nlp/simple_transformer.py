@@ -2,6 +2,7 @@ import datetime
 from typing import Any, Dict, List, Tuple
 import numpy as np
 import sys
+import time
 import torch
 from torch import Tensor
 import torch.nn as nn
@@ -942,9 +943,15 @@ def train(
                         drop_rate=0.1,
                         padding_idx=0)
     model = model.to(device)
+    times = []
+    history = [[]]  # 记录: 训练集损失, 方便后续绘图
+    num_batches = len(data_iter)
     for epoch in range(num_epochs):
+        # 训练
+        metric_train = [0.0] * 2  # 统计: 训练集损失之和, 训练集样本数量之和
         data_iter_tqdm = tqdm(data_iter, file=sys.stdout)
         for i, batch in enumerate(data_iter_tqdm):
+            t_start = time.time()
             # bx.shape [batch_size, num_steps_x]
             # by.shape [batch_size, num_steps_y]
             bx, by, decoder_len = batch
@@ -955,6 +962,11 @@ def train(
                     pad_zero(by,
                              MAX_LEN + 1)).type(torch.LongTensor).to(device)
             loss, logits = model.step(bx, by)
+            with torch.no_grad():
+                metric_train[0] += float(loss * bx.shape[0])
+                metric_train[1] += float(bx.shape[0])
+            times.append(time.time() - t_start)
+            train_loss = metric_train[0] / metric_train[1]
             if i % 50 == 0:
                 target = dataset.idx2str(by[0, 1:-1].cpu().data.numpy())
                 # pred.shape [1, MAX_LEN + 1]
@@ -962,8 +974,20 @@ def train(
                                        dataset.id_to_token)
                 res = dataset.idx2str(pred[0].cpu().data.numpy())
                 src = dataset.idx2str(bx[0].cpu().data.numpy())
-                data_iter_tqdm.desc = f'epoch {epoch}, step {i}, loss {loss:.3f}, ' \
+                history[0].append((epoch + (i + 1) / num_batches, train_loss))
+                data_iter_tqdm.desc = f'epoch {epoch}, step {i}, train loss {train_loss:.3f}, ' \
                     f'input {src}, target {target}, inference {res}'
+
+    plt.figure(figsize=(6, 4))
+    # 训练集损失
+    plt.plot(*zip(*history[0]), '-', label='train loss')
+    plt.xlabel('epoch')
+    # 从epoch=1开始显示, 0-1这个范围的数据丢弃不展示,
+    # 因为只有训练完成1个epochs之后, 才会有第一条test acc记录
+    plt.xlim((1, num_epochs))
+    plt.grid()
+    plt.legend()
+    plt.show()
     return model, data_iter, dataset
 
 
@@ -987,6 +1011,7 @@ def export_attention(model: nn.Module,
         bx, by = torch.from_numpy(pad_zero(bx, max_len=MAX_LEN)).type(
             torch.LongTensor).to(device), torch.from_numpy(
                 pad_zero(by, MAX_LEN + 1)).type(torch.LongTensor).to(device)
+        break
     # 送入translate参数的形状: [1, MAX_LEN]
     model.translate(bx[0:1], dataset.token_to_id, dataset.id_to_token)
     attn_data = {"src": src, "tgt": tgt, "attentions": model.attentions}
@@ -1182,7 +1207,7 @@ def transformer_attention_matrix(data: Dict, case: int = 0) -> None:
     # 遍历前三层
     for i in range(n_layer):
         for j in range(n_head):
-            plt.subplot(3, 4, i * 4 + j + 1)
+            plt.subplot(n_layer, n_head, i * 4 + j + 1)
             plt.imshow(encoder_atten[i][case, j][:len(src), :len(src)],
                        vmax=1,
                        vmin=0,
@@ -1201,7 +1226,7 @@ def transformer_attention_matrix(data: Dict, case: int = 0) -> None:
     plt.suptitle("Decoder self-attention")
     for i in range(n_layer):
         for j in range(n_head):
-            plt.subplot(3, 4, i * 4 + j + 1)
+            plt.subplot(n_layer, n_head, i * n_head + j + 1)
             plt.imshow(decoder_tgt_atten[i][case, j][:len(tgt), :len(tgt)],
                        vmax=1,
                        vmin=0,
@@ -1220,7 +1245,7 @@ def transformer_attention_matrix(data: Dict, case: int = 0) -> None:
     plt.suptitle("Decoder-Encoder attention")
     for i in range(n_layer):
         for j in range(n_head):
-            plt.subplot(3, 4, i * 4 + j + 1)
+            plt.subplot(n_layer, n_head, i * 4 + j + 1)
             plt.imshow(decoder_src_atten[i][case, j][:len(tgt), :len(src)],
                        vmax=1,
                        vmin=0,
@@ -1278,7 +1303,7 @@ def transformer_attention_line(data: Dict, case: int = 0) -> None:
             ax_.set_yticklabels(tgt_label, fontsize=9)  # tgt
             # 只显示最后一层的注意力
             # img获取注意力 [10, 8]
-            img = decoder_src_atten[-1][case, i + j][:10, :8]
+            img = decoder_src_atten[-1][case, i * 2 + j][:10, :8]
             color = cm.rainbow(np.linspace(0, 1, img.shape[0]))
             # left_top=8, right_top=10
             left_top, right_top = img.shape[1], img.shape[0]
@@ -1304,7 +1329,7 @@ def transformer_attention_line(data: Dict, case: int = 0) -> None:
 
 if __name__ == '__main__':
     device = try_gpu()
-    model, data_iter, dataset = train(num_epochs=100, device=device)
+    model, data_iter, dataset = train(num_epochs=5, device=device)
     # Chinese time order: yy/mm/dd  ['31-04-26', '04-07-18', '33-06-06']
     # English time order: dd/M/yyyy ['26/Apr/2031', '18/Jul/2004', '06/Jun/2033']
     # Vocabularies:  {'0', 'Nov', '/', '-', '<PAD>', '2', '1', '7', '9', 'Feb',
@@ -1316,18 +1341,11 @@ if __name__ == '__main__':
     # y index sample:
     # <BOS>26/Apr/2031<EOS>
     # [13  5  9  2 15  2  5  3  6  4 14]
-    # epoch 0, step 100, loss 0.840, input 84-05-17<PAD><PAD><PAD>, target 17/May/1984<EOS>, inference <BOS>18/Dec/1981<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.48it/s]
-    # epoch 1, step 100, loss 0.031, input 83-05-20<PAD><PAD><PAD>, target 20/May/1983<EOS>, inference <BOS>20/May/1983<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.14it/s]
-    # epoch 2, step 100, loss 0.007, input 08-05-02<PAD><PAD><PAD>, target 02/May/2008<EOS>, inference <BOS>02/May/2008<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.48it/s]
-    # epoch 3, step 100, loss 0.003, input 92-03-19<PAD><PAD><PAD>, target 19/Mar/1992<EOS>, inference <BOS>19/Mar/1992<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.48it/s]
-    # epoch 4, step 100, loss 0.002, input 33-10-13<PAD><PAD><PAD>, target 13/Oct/2033<EOS>, inference <BOS>13/Oct/2033<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.74it/s]
-    # ...
-    # epoch 94, step 100, loss 0.000, input 91-07-20<PAD><PAD><PAD>, target 20/Jul/1991<EOS>, inference <BOS>20/Jul/1991<EOS>: 100%|██████████| 125/125 [00:03<00:00, 36.98it/s]
-    # epoch 95, step 100, loss 0.000, input 81-06-22<PAD><PAD><PAD>, target 22/Jun/1981<EOS>, inference <BOS>22/Jun/1981<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.18it/s]
-    # epoch 96, step 100, loss 0.000, input 86-10-12<PAD><PAD><PAD>, target 12/Oct/1986<EOS>, inference <BOS>12/Oct/1986<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.40it/s]
-    # epoch 97, step 100, loss 0.000, input 30-05-26<PAD><PAD><PAD>, target 26/May/2030<EOS>, inference <BOS>26/May/2030<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.99it/s]
-    # epoch 98, step 100, loss 0.000, input 16-10-17<PAD><PAD><PAD>, target 17/Oct/2016<EOS>, inference <BOS>17/Oct/2016<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.54it/s]
-    # epoch 99, step 100, loss 0.000, input 84-06-21<PAD><PAD><PAD>, target 21/Jun/1984<EOS>, inference <BOS>21/Jun/1984<EOS>: 100%|██████████| 125/125 [00:03<00:00, 37.46it/s]
+    # epoch 0, step 100, train loss 1.394, input 27-09-16<PAD><PAD><PAD>, target 16/Sep/2027<EOS>, inference <BOS>04/Jun/2004<EOS>: 100%|█| 125/125 [00
+    # epoch 1, step 100, train loss 0.322, input 96-06-26<PAD><PAD><PAD>, target 26/Jun/1996<EOS>, inference <BOS>26/Jun/1996<EOS>: 100%|█| 125/125 [00
+    # epoch 2, step 100, train loss 0.011, input 28-06-29<PAD><PAD><PAD>, target 29/Jun/2028<EOS>, inference <BOS>29/Jun/2028<EOS>: 100%|█| 125/125 [00
+    # epoch 3, step 100, train loss 0.004, input 12-06-12<PAD><PAD><PAD>, target 12/Jun/2012<EOS>, inference <BOS>12/Jun/2012<EOS>: 100%|█| 125/125 [00
+    # epoch 4, step 100, train loss 0.002, input 91-07-10<PAD><PAD><PAD>, target 10/Jul/1991<EOS>, inference <BOS>10/Jul/1991<EOS>: 100%|█| 125/125 [00
 
     # 显示:
     position_embedding()
