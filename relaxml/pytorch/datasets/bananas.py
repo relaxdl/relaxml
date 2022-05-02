@@ -184,7 +184,9 @@ def load_data_bananas(batch_size: int = 32) -> Tuple[DataLoader, DataLoader]:
     2. 训练集一共1000张图片, 验证集一共100张图片
     3. 需要检测的目标只有1类, 就是: 香蕉(label=0)
     4. 每张图片只有1个目标需要检测
-    5. 标签的格式: [label, xmin, ymin, xmax, ymax]
+    5. 返回的数据格式是: [batch_size, max_gt_boxes, 5]
+       max_gt_boxes任何图像中边界框可能出现的最大数量, 在我们的数据集中为1
+    6. 标签的格式: [label, xmin, ymin, xmax, ymax]
        <1> 标签从0开始, 当前只有一类, 0 - 香蕉
        <2> 里面的4个坐标都被处理成了0-1.之间的相对坐标, 乘以图片原始的宽和高之后, 
            就可以得到真实的像素坐标了
@@ -207,7 +209,7 @@ def load_data_bananas(batch_size: int = 32) -> Tuple[DataLoader, DataLoader]:
     >>> edge_size = 256  # 图片的H/W
     >>> for x, y in train_iter:
     >>>     imgs = x[:10].permute(0, 2, 3, 1) # [batch_size, C, H, W] -> [batch_size, H, W, C]
-    >>>     labels = y[:10] # [batch_size, num_gt_boxes=1, 5]
+    >>>     labels = y[:10] # [batch_size, max_gt_boxes=1, 5]
     >>>     break
     # 绘图, 显示imgs & labels
     >>> axes = show_images(imgs, 2, 5, scale=2)
