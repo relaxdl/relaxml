@@ -1,5 +1,5 @@
 import os
-from typing import Tuple, List
+from typing import Tuple, List, Union
 import requests
 import sys
 import time
@@ -7,6 +7,7 @@ import hashlib
 import zipfile
 import tarfile
 import torch
+import numpy as np
 from torch import Tensor
 import torch.nn as nn
 import torchvision
@@ -71,6 +72,38 @@ def download_extract(cache_dir: str = '../data') -> str:
     return data_dir
 
 
+def show_images(imgs: List[Union[Tensor, np.ndarray]],
+                num_rows: int,
+                num_cols: int,
+                titles: List[str] = None,
+                scale: float = 1.5) -> plt.Axes:
+    """
+    Plot a list of images
+
+    imgs需要[H, W, C]或者[H, W]这样的格式
+
+    >>> img = plt.imread(download('cat3')) # [H, W, C]
+    >>> show_images([img, img, img, img], 2, 2, 
+                    titles=['t1', 't2', 't3', 't4'])
+    >>> plt.show()
+    """
+    figsize = (num_cols * scale, num_rows * scale)
+    _, axes = plt.subplots(num_rows, num_cols, figsize=figsize)
+    axes = axes.flatten()
+    for i, (ax, img) in enumerate(zip(axes, imgs)):
+        if torch.is_tensor(img):
+            # 图片张量
+            ax.imshow(img.numpy())
+        else:
+            # PIL Image
+            ax.imshow(img)
+        ax.axes.get_xaxis().set_visible(False)
+        ax.axes.get_yaxis().set_visible(False)
+        if titles:
+            ax.set_title(titles[i])
+    return axes
+
+
 def load_data_hotdog(
         batch_size: int = 32,
         cache_dir: str = '../data') -> Tuple[DataLoader, DataLoader]:
@@ -117,6 +150,11 @@ def load_data_hotdog(
 
 
 def resnet18(pretrained: bool = True) -> nn.Module:
+    """
+    参数:
+    pretrained=True, 使用预训练好的模型参数
+    pretrained=False, 所有模型参数随机初始化
+    """
     pretrained_net = torchvision.models.resnet18(pretrained=pretrained)
     # 替换: Linear(in_features=512, out_features=1000, bias=True)
     pretrained_net.fc = nn.Linear(pretrained_net.fc.in_features, 2)
@@ -232,7 +270,8 @@ def plot_history(
 def run(pretrained: bool = True) -> None:
     """
     参数:
-    pretrained=True的时候是'微调'模型; pretrained=False的时候是从头开始训练模型
+    pretrained=True的时候是'微调'模型, 使用预训练好的模型参数
+    pretrained=False的时候是从头开始训练模型, 所有模型参数随机初始化
     """
     net = resnet18(pretrained)
     if pretrained:
