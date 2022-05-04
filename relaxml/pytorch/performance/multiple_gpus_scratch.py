@@ -251,8 +251,6 @@ def train(num_epochs: int = 10,
     device_params = [get_params(params, d) for d in devices]
     times = []
     history = [[]]  # 记录: 训练集损失, 方便后续绘图
-    # animator = d2l.Animator('epoch', 'test acc', xlim=[1, num_epochs])
-    # timer = d2l.Timer()
     for epoch in range(num_epochs):
         t_start = time.time()
         for X, y in train_iter:
