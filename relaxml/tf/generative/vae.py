@@ -5,6 +5,12 @@ import tensorflow as tf
 import tensorflow.keras as keras
 from tensorflow.keras import layers
 from tensorflow.keras.datasets import mnist
+"""
+Variational Autoencoder
+
+说明:
+https://tech.foxrelax.com/generative/vae/
+"""
 
 # 全局配置
 img_shape = (28, 28, 1)  # 输入图片的形状
@@ -16,6 +22,8 @@ latent_dim = 2
 def encoder():
     """
     VAE Encoder
+
+    通过Encoder, 输入图像最终被编码为两个参数: `z_mean, z_log_var`
 
     >>> batch_size, latent_dim = 16, 2
     >>> x = tf.random.normal((batch_size, 28, 28, 1))
@@ -53,6 +61,10 @@ def sampling(args):
     """
     VAE Sampler
 
+    用`z_mean, z_log_var`来生成潜在空间的一个点, 也就是潜在空间的
+    一个`latent_dim`维向量, 将这个向量送入Decoder可以解码为图像空间
+    的一幅图像 
+
     >>> batch_size, latent_dim = 16, 2
     >>> z_mean = tf.random.normal((batch_size, latent_dim))
     >>> z_log_var = tf.random.normal((batch_size, latent_dim))
@@ -71,6 +83,8 @@ def sampling(args):
 def decoder():
     """
     VAE Decoder
+
+    将潜在空间的的一个点, 也就是一个`latent_dim`维向量解码为一张图像
 
     >>> batch_size, latent_dim = 16, 2
     >>> x = tf.random.normal((batch_size, latent_dim))
@@ -142,9 +156,11 @@ def vae():
     """
     VAE模型
 
-    1. Encoder编码数据, 得到[z_mean, z_log_var]
-    2. 根据[z_mean, z_log_var]采样数据
-    3. Decoder解码数据
+    1. Encoder编码数据, 得到[z_mean, z_log_var], z_mean和
+       z_log_var都是`latent_dim`维向量
+    2. 根据[z_mean, z_log_var]采样数据, 生成潜在空间的一个点, 
+       也就是一个`latent_dim`维向量
+    3. Decoder解码这个`latent_dim`维向量向量, 还原出图片
     4. 两个损失:
        a. 重构损失: [x, z_decoded]
        b. 正则化损失: [z_mean, z_log_var]
@@ -196,6 +212,14 @@ def train(num_epochs=10):
 
 
 def plot(vae_decoder):
+    """
+    从二维潜在空间中采样一组点的网格, 并将其解码为图像
+
+    1. 显示15x15的数字网格, 一共255个数字
+    2. 采样的数字网格展现了不同数字类别的完全连续分布, 当我们沿着潜在空间
+       的一条路径观察时, 会观察到一个数字逐渐变为另外一个数字. 这个空间的
+       特定方向具有一定的意义, 比如: '逐渐变为4'或者'逐渐变为1'等
+    """
     n = 15
     digit_size = 28
     figure = np.zeros((digit_size * n, digit_size * n))

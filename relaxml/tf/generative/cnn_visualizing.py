@@ -15,6 +15,12 @@ from tensorflow.keras.preprocessing import image
 from tensorflow.keras import models, layers, optimizers
 from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input, decode_predictions
 """
+卷积神经网络可视化
+
+说明:
+https://tech.foxrelax.com/generative/cnn_visualizing/
+"""
+"""
 这是Kaggle上2013年的一个竞赛问题用到的数据集, 这个数据集包含25000张猫狗图像(每个类别大约12500张), 
 大小为543MB(压缩后)
 

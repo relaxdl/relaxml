@@ -8,6 +8,12 @@ import tensorflow as tf
 from tensorflow.keras.preprocessing import image
 import tensorflow.keras as keras
 from tensorflow.keras.applications import inception_v3
+"""
+Deep Dream
+
+说明:
+https://tech.foxrelax.com/generative/deepdream/
+"""
 
 
 def download(cache_dir='../data'):
@@ -101,27 +107,22 @@ def deprocess_image(x):
 
 
 def inceptionv3():
-    # 使用预训练的不包括全连接层的InceptionV3网络
+    """
+    使用预训练的不包括全连接层的InceptionV3网络
+    """
     net = inception_v3.InceptionV3(weights='imagenet', include_top=False)
     net.trainable = False
     assert len(net.trainable_weights) == 0
     return net
 
 
-# 这个系数表示该层对要最大化的损失的贡献度有多少,
 # 层的名字硬编码在InceptionV3网络中
 layer_names = ['mixed2', 'mixed3', 'mixed4', 'mixed5']
-layer_contributions = {
-    'mixed2': 0.2,
-    'mixed3': 3.0,
-    'mixed4': 2.0,
-    'mixed5': 1.5,
-}
 
 
 def layer_outputs(net):
     """
-    获取InceptionV3中间层的输出
+    获取Inception V3中间层的输出
 
     >>> x = tf.random.normal((32, 224, 224, 3))
     >>> net_outputs = layer_outputs(net)
@@ -140,6 +141,17 @@ def layer_outputs(net):
     return model
 
 
+# 选择那些层(以及它们最终对损失的贡献)对生成的可视化结果具有很大影响
+# a. 更靠近底部的层生成的是几何图案
+# b. 更靠近顶部的层生成的是从中能够开出某些ImageNet类别(比如鸟或者狗)的图案
+# 系数表示该层对要最大化的loss的贡献度有多少
+layer_contributions = {
+    'mixed2': 0.2,
+    'mixed3': 3.0,
+    'mixed4': 2.0,
+    'mixed5': 1.5,
+}
+
 def calc_loss(activations):
     """
     参数:
@@ -148,7 +160,7 @@ def calc_loss(activations):
     losses = []
     for layer_name, activation in zip(layer_names, activations):
         scaling = tf.reduce_prod(tf.cast(tf.shape(activation), 'float32'))
-        coeff = layer_contributions[layer_name]  # 注意: 不做类型转换会切断梯度传播
+        coeff = layer_contributions[layer_name]
         # 将该层特征的L2范数添加到loss中, 为了避免边界伪影, 损失中仅包含非边界像素
         losses.append(coeff *
                       tf.reduce_sum(tf.square(activation[:, 2:-1, 2:-2, :])) /
@@ -158,12 +170,12 @@ def calc_loss(activations):
 
 def gradient_ascent(net_outputs, img, iterations, step, max_loss=None):
     """
-    做梯度上升更新图像
+    做`iterations`次梯度上升更新图像`img`
 
     参数:
-    net_outputs: 获取InceptionV3中间层的输出
+    net_outputs: 获取Inception V3中间层的输出
     img: [batch_size=1, H, W, C=3]
-    iterations: 运行梯度上升的步数
+    iterations: 运行梯度上升的次数
     step: 梯度上升的步长(学习率)
     max_loss: 如果损失大于max_loss, 我们要中断梯度上升过程, 以避免得到丑陋的伪影
 
@@ -174,11 +186,11 @@ def gradient_ascent(net_outputs, img, iterations, step, max_loss=None):
     for i in range(iterations):
         with tf.GradientTape() as tape:
             tape.watch(x)
-            # 前向传播获得中间输出
+            # 前向传播获得中间层输出
             activations = net_outputs(x)
             # 计算loss
             loss = calc_loss(activations)
-        # 计算损失相对于图像的梯度
+        # 计算损失(loss)相对于图像的梯度
         # grads.shape [batch_size=1, H, W, C=3]
         grads = tape.gradient(loss, x)
         # 梯度标准化
@@ -218,17 +230,19 @@ def train(cache_dir='../data'):
     # successive_shapes[0] = (696.43, 1044.90)
     # shrunk_original_img.shape [1, 696, 1045, 3]
     shrunk_original_img = resize_img(img, successive_shapes[0])  # 将图像大小缩放到最小尺寸
+    # 遍历不同的尺度, 在每个尺度下做梯度上升来更新`img`
     for shape in successive_shapes:
         print('Processing iamge shape:', shape)
-        # 将梦境图像放大
+        # 将梦境图像`img`放大到shape
         # img.shape [batch_size=1, H, W, channels=3]
         img = resize_img(img, shape)
         # 梯度上升, 改变梦境图像`img`
         img = gradient_ascent(net_outputs, img, iterations, step, max_loss)
-        # 将原始图像的较小版本放大, 它会变得像素化
+        # 重新注入细节:
+        # 将原始图像的`较小版本`放大, 它会变得像素化
         # unscaled_shrunk_original_img.shape [batch_size=1, H, W, channels=3]
         unscaled_shrunk_original_img = resize_img(shrunk_original_img, shape)
-        # 在这个尺寸上计算原始图像的高质量版本
+        # 在这个尺寸上计算原始图像的`高质量版本`
         # same_size_original.shape [batch_size=1, H, W, channels=3]
         same_size_original = resize_img(original_img, shape)
         lost_detail = same_size_original - unscaled_shrunk_original_img
