@@ -1,7 +1,12 @@
 import tensorflow as tf
 import tensorflow.keras as keras
 import matplotlib.pyplot as plt
+"""
+Auto Encoder
 
+说明:
+https://tech.foxrelax.com/generative/autoencoder/
+"""
 
 def load_data_fashion_mnist():
     """
