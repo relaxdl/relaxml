@@ -267,7 +267,7 @@ class Environment():
 
 def V(s, gamma=0.99):
     """
-    用贝尔曼方程-评估状态`s`的价值
+    V(s): 用贝尔曼方程-评估状态`s`的价值
 
     参数:
     s: t时刻的state
@@ -284,7 +284,7 @@ def R(s):
     奖励函数(Reward Function)
 
     参数:
-    s: t+1时刻的state
+    s: t时刻的state
     """
     if s == "happy_end":
         return 1
@@ -296,6 +296,8 @@ def R(s):
 
 def max_V_on_next_state(s):
     """
+    计算所有行动的价值, 并返回最大值
+
     1. 找t+1时刻`价值最大`的动作, 也就是基于价值最大化来选择下一个动作, 
        返回这个动作对应的价值, 就是t+1时刻的价值
     2. 可以通过求`期望`的方式把t+1时刻的state消掉, 从而得到t+1时刻a对应
@@ -340,6 +342,12 @@ def transit_func(s, a):
 
     - 如果agent尝试向上移动, 我们假设有90%的时间(即0.9的概率)它会按照计划移动
     - 有10%的时间(即0.1的概率), 试图向上移动会导致agent向下移动
+
+    1. 一共2个动作: 'up'和'down'
+    2. 尝试5个动作则游戏终止: 如果'up'动作大于等于4次则成功, 否则为失败
+    
+    可见'up'这个动作越多, 对整体的奖励是有益的, 所以当一个状态中, 'up'数量比较多的时候,
+    分数会比较高
 
     参数:
     s: t时刻的state
@@ -388,6 +396,8 @@ class Planner():
 
     def transitions_at(self, state, action):
         """
+        状态迁移函数(Transition Function)
+
         t+1时刻每个state对应的概率和奖励
 
         参数:
@@ -437,6 +447,10 @@ class ValueIterationPlanner(Planner):
     def plan(self, gamma=0.9, threshold=0.0001):
         """
         更新价值函数V
+
+        初始化各种状态的价值为0(V[s]=0), 之后不断迭代更新, 直到delta小于threshold为
+        止. 在更新的时候会计算各种state下各个动作对应的价值, 找到动作最大的价值作为state
+        的价值进行更新. 更新的时候会用i次迭代的V来计算i+1次迭代的V
         """
         self.initialize()
         actions = self.env.actions
@@ -498,7 +512,8 @@ class PolicyIterationPlanner(Planner):
 
     def estimate_by_policy(self, gamma, threshold):
         """
-        更新价值函数V
+        根据最新的策略函数pi(a|s), 更新价值函数V. 就是计算每个state价值的'期望'. 
+        得到的结果会在下一轮迭代中用于评价pi(a|s)
         """
         V = {}
         for s in self.env.states:
@@ -535,7 +550,13 @@ class PolicyIterationPlanner(Planner):
         """
         更新价值函数V和策略函数pi(a|s)
 
-        直到`策略函数pi(a|s)选择的动作`等于`价值函数(V)评分最高的动作`, 结束迭代
+        plan使用estimate_by_policy的计算结果来计算各种行动的价值, 价值最高的行动
+        叫做best_action, 如果基于当前策略计算得到的行动policy_action和best_action
+        不一样, 则更新策略. 如果一样就停止迭代
+
+        当策略函数pi(a|s)被更新时, 基于策略计算的价值函数V也会更新, 所以更新价值V和
+        策略函数pi(a|s)会被不断反复, 这种相互更新是迭代的核心. 也就是价值函数V和策略函
+        数pi(a|s)一起被学习
         """
         self.initialize()
         states = self.env.states
@@ -557,7 +578,8 @@ class PolicyIterationPlanner(Planner):
 
                 # 与其他动作比较
                 action_rewards = {}
-                # 遍历所有的动作, 计算每一个动作的价值, 并选择价值最大的动作
+                # 遍历所有的动作, 计算每一个动作的价值, 可以通过求`期望`的
+                # 方式把state消掉, 从而得到a对应的价值
                 for a in actions:
                     r = 0
                     for prob, next_state, reward in self.transitions_at(s, a):
