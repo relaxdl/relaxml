@@ -1,23 +1,18 @@
 # -*- coding:utf-8 -*-
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Union, Tuple
 import copy
-from xmlrpc.client import Boolean
 from .gotypes import Player, Point
 from .scoring import compute_game_result
+from . import zobrist
 
-__all__ = [
-    'GoString'
-    'Board',
-    'GameState',
-    'Move',
-]
+__all__ = ['Move', 'GoString', 'Board', 'GameState']
 
 
 class IllegalMoveError(Exception):
     pass
 
 
-class Move():
+class Move:
     """
     表示一个回合中可能采取的动作. 有三种动作:
     1. 在棋盘上落下一颗棋子(play)
@@ -66,7 +61,7 @@ class Move():
             return 'pass'
         if self.is_resign:
             return 'resign'
-        return f'(r {self.point.row}, c {self.point.col})'
+        return '(r %d, c %d)' % (self.point.row, self.point.col)
 
     def __hash__(self):
         return hash((self.is_play, self.is_pass, self.is_resign, self.point))
@@ -77,14 +72,14 @@ class Move():
                                 other.point)
 
 
-class GoString():
+class GoString:
     """
     棋链(string of stones)
 
     1. 独立检查棋子会增加计算的复杂度, 可以将同色的棋子组成一个整体, 同时跟踪整体的
     状态以及它们的气. 这样在实现棋盘逻辑时效率更高
-    2. GoString直接跟踪和维护自己的气
-    3. 使用`set()`可以高效的实现这个结构, 方便的计算集合的交集, 并集, 差集等
+    2. GoString一旦创建, 是不可变的. 我们使用frozenset来实现. frozenset没有添加
+    和删除元素, 因此需要更新的时候, 不能修改现有集合, 只能创建新的集合
     """
 
     def __init__(self, color: Player, stones: Union[List[Point], set],
@@ -96,34 +91,35 @@ class GoString():
         liberties: 气的Point
         """
         self.color = color
-        self.stones = set(stones)
-        self.liberties = set(liberties)
+        self.stones = frozenset(stones)
+        self.liberties = frozenset(liberties)
 
-    def remove_liberty(self, point: Point) -> None:
+    def without_liberty(self, point: Point) -> Any:
         """
         删除一口气
 
         当对方在这条棋链相邻的地方落子时, 棋链的气通常会减少
         """
-        self.liberties.remove(point)
+        new_liberties = self.liberties - set([point])
+        return GoString(self.color, self.stones, new_liberties)
 
-    def add_liberty(self, point: Point) -> None:
+    def with_liberty(self, point: Point) -> Any:
         """
         增加一口气
 
         当这条棋链或者己方其它棋链吃掉对方棋子的时候, 棋链的气会增加
         """
-        self.liberties.add(point)
+        new_liberties = self.liberties | set([point])
+        return GoString(self.color, self.stones, new_liberties)
 
-    def merged_with(self, go_string: Any) -> Any:
+    def merged_with(self, string: Any) -> Any:
         """
         当一次落子把两颗棋子连接起来的时候, 需要merge两个GoString
         """
-        assert go_string.color == self.color
-        combined_stones = self.stones | go_string.stones
+        assert string.color == self.color
+        combined_stones = self.stones | string.stones
         return GoString(self.color, combined_stones,
-                        (self.liberties | go_string.liberties) -
-                        combined_stones)
+                        (self.liberties | string.liberties) - combined_stones)
 
     @property
     def num_liberties(self) -> int:
@@ -138,8 +134,11 @@ class GoString():
             self.stones == other.stones and \
             self.liberties == other.liberties
 
+    def __deepcopy__(self, memodict={}):
+        return GoString(self.color, self.stones, copy.deepcopy(self.liberties))
 
-class Board():
+
+class Board:
     """
     棋盘
 
@@ -150,6 +149,7 @@ class Board():
         self.num_rows = num_rows
         self.num_cols = num_cols
         self._grid = {}  # Dict[Point, GoString] 用来跟踪棋盘的状态
+        self._hash = zobrist.EMPTY_BOARD  # 使用zobrist哈希来跟踪棋盘状态
 
     def place_stone(self, player: Player, point: Point) -> None:
         """
@@ -157,8 +157,9 @@ class Board():
 
         1. 检测point是否在棋盘内以及point是否已经有棋子
         2. 合并任何同色且相邻的棋链
-        3. 减少对方所有相邻棋链的气
-        4. 如果对方某条棋链没有气了, 要提走它
+        3. 针对player & point应用哈希来更新棋盘状态
+        4. 减少对方所有相邻棋链的气
+        5. 如果对方某条棋链没有气了, 要提走它
 
         注意:
         Board落子规则并不会检测`自吃`, 自吃的检测放到GameState中, GameState中
@@ -167,6 +168,7 @@ class Board():
         # 检测point是否在棋盘内以及point是否已经有棋子
         assert self.is_on_grid(point)
         assert self._grid.get(point) is None
+
         adjacent_same_color = []  # List[GoString] point周围(neighbor)同色棋链
         adjacent_opposite_color = []  # List[GoString] point周围(neighbor)对方棋链
         liberties = []  # List[Point] point周围(neighbor)的气
@@ -195,14 +197,24 @@ class Board():
         for new_string_point in new_string.stones:
             self._grid[new_string_point] = new_string
 
-        # 减少对方所有相邻棋链的气
-        for other_color_string in adjacent_opposite_color:
-            other_color_string.remove_liberty(point)
+        # 针对player & point应用哈希来更新棋盘状态
+        self._hash ^= zobrist.HASH_CODE[point, player]
 
-        # 如果对方某条棋链没有气了, 要提走它
         for other_color_string in adjacent_opposite_color:
-            if other_color_string.num_liberties == 0:
+            # 减少对方所有相邻棋链的气
+            replacement = other_color_string.without_liberty(point)
+            if replacement.num_liberties:
+                self._replace_string(other_color_string.without_liberty(point))
+            else:
+                # 如果对方某条棋链没有气了, 要提走它
                 self._remove_string(other_color_string)
+
+    def _replace_string(self, new_string: GoString) -> None:
+        """
+        更新围棋棋盘网格
+        """
+        for point in new_string.stones:
+            self._grid[point] = new_string
 
     def _remove_string(self, string: GoString) -> None:
         """
@@ -210,19 +222,19 @@ class Board():
 
         在提走一条棋链的时候, 相邻棋链气数会增加
         """
-        # 遍历GoString所有的棋子
         for point in string.stones:
-            # 遍历每个棋子的neighbors
             for neighbor in point.neighbors():
                 neighbor_string = self._grid.get(neighbor)
                 if neighbor_string is None:
                     continue
                 if neighbor_string is not string:
-                    # 相邻棋链气数增加
-                    neighbor_string.add_liberty(point)
+                    self._replace_string(neighbor_string.with_liberty(point))
             self._grid[point] = None
 
-    def is_on_grid(self, point: Point) -> Boolean:
+            # 在zobrist哈希中, 需要通过逆应用这步动作的哈希值来实现提子
+            self._hash ^= zobrist.HASH_CODE[point, string.color]
+
+    def is_on_grid(self, point: Point) -> bool:
         """
         检查point是否在棋盘内
         """
@@ -251,10 +263,19 @@ class Board():
         return isinstance(other, Board) and \
             self.num_rows == other.num_rows and \
             self.num_cols == other.num_cols and \
-            self._grid == other._grid
+            self._hash() == other._hash()
+
+    def __deepcopy__(self, memodict={}):
+        copied = Board(self.num_rows, self.num_cols)
+        copied._grid = copy.copy(self._grid)
+        copied._hash = self._hash
+        return copied
+
+    def zobrist_hash(self):
+        return self._hash
 
 
-class GameState():
+class GameState:
     """
     游戏状态
     1. 棋子的布局
@@ -273,6 +294,12 @@ class GameState():
         self.board = board
         self.next_player = next_player  # 下一回合的执子方
         self.previous_state = previous  # 上一回合的游戏状态, 刚创建的游戏时, 这个这个字段为None
+        if self.previous_state is None:
+            self.previous_states = frozenset()
+        else:
+            # 使用frozenset()来存储了所有的游戏状态, 可以`高效的判断劫争`
+            self.previous_states = frozenset(previous.previous_states | {(
+                previous.next_player, previous.board.zobrist_hash())})
         self.last_move = move  # 上一步动作, 刚创建的游戏时, 这个字段为None
 
     def apply_move(self, move: Move) -> Any:
@@ -296,27 +323,7 @@ class GameState():
         board = Board(*board_size)
         return GameState(board, Player.black, None, None)
 
-    def is_over(self) -> Boolean:
-        """
-        判断棋局是否结束
-
-        1. 如果一方直接认输(resign)则棋局结束
-        2. 如果双方接连跳过回合(pass)则棋局结束
-        """
-        if self.last_move is None:
-            return False
-
-        # 如果一方直接认输(resign)则棋局结束
-        if self.last_move.is_resign:
-            return True
-
-        # 如果双方接连跳过回合(pass)则棋局结束
-        second_last_move = self.previous_state.last_move
-        if second_last_move is None:
-            return False
-        return self.last_move.is_pass and second_last_move.is_pass
-
-    def is_move_self_capture(self, player: Player, move: Move) -> Boolean:
+    def is_move_self_capture(self, player: Player, move: Move) -> bool:
         """
         判断是否是`自吃(self capture)`
 
@@ -336,7 +343,7 @@ class GameState():
         """
         if not move.is_play:
             return False
-        next_board = copy.deepcopy(self.board)  # 副本
+        next_board = copy.deepcopy(self.board)
         next_board.place_stone(player, move.point)
         new_string = next_board.get_go_string(move.point)
         return new_string.num_liberties == 0
@@ -344,38 +351,25 @@ class GameState():
     @property
     def situation(self) -> Tuple[Player, Board]:
         """
-        游戏状态包括: 棋盘上所有棋子的位置, 以及下一回合的执子方
+        游戏状态包括: 棋盘上所有棋子的位置zobrist哈希, 以及下一回合的执子方
         """
         return (self.next_player, self.board)
 
-    def does_move_violate_ko(self, player: Player, move: Move) -> Boolean:
+    def does_move_violate_ko(self, player: Player, move: Move) -> bool:
         """
         判断是否是`劫争(ko)`
 
         为了保证棋局最终能够结束, 那些会让棋局回到之前某个状态的落子动作是禁止的. 在实现劫
         争规则的时候要注意`反提(snapback)`. 劫争规则一般归纳为`不能立即重新吃掉对方棋子`
-
-        我们的实现方式如下: 棋手的一次落子不能让棋局恢复到上一回合的游戏状态. 这里, 游戏状态
-        包括`棋盘上所有棋子的位置, 以及下一回合的执子方`,这种组合称为situational superko rule. 
-        由于每个GameState实例都存储了指向前一状态的指针, 我们可以从当前状态一直往回遍历所有的历史
-        状态, 并对比是否有劫争情况发生
-
-        这个版本的实现逻辑简单, 但是速度比较慢, 每一次落子, 都必须创建一个棋局游戏状态的deepcopy, 
-        并将它与之前所有的历史状态进行对比, 历史状态的数量会随着时间推移增加
         """
         if not move.is_play:
             return False
-        next_board = copy.deepcopy(self.board)  # 副本
+        next_board = copy.deepcopy(self.board)
         next_board.place_stone(player, move.point)
-        next_situation = (player.other, next_board)
-        past_state = self.previous_state
-        while past_state is not None:
-            if past_state.situation == next_situation:
-                return True
-            past_state = past_state.previous_state
-        return False
+        next_situation = (player.other, next_board.zobrist_hash())
+        return next_situation in self.previous_states
 
-    def is_valid_move(self, move: Move) -> Boolean:
+    def is_valid_move(self, move: Move) -> bool:
         """
         判断动作是否合法
 
@@ -391,6 +385,26 @@ class GameState():
                 and not self.is_move_self_capture(self.next_player, move)
                 and not self.does_move_violate_ko(self.next_player, move))
 
+    def is_over(self) -> bool:
+        """
+        判断棋局是否结束
+
+        1. 如果一方直接认输(resign)则棋局结束
+        2. 如果双方接连跳过回合(pass)则棋局结束
+        """
+        if self.last_move is None:
+            return False
+
+        # 如果一方直接认输(resign)则棋局结束
+        if self.last_move.is_resign:
+            return True
+
+        # 如果双方接连跳过回合(pass)则棋局结束
+        second_last_move = self.previous_state.last_move
+        if second_last_move is None:
+            return False
+        return self.last_move.is_pass and second_last_move.is_pass
+
     def legal_moves(self) -> List[Move]:
         """
         返回当前合法的moves
@@ -398,11 +412,12 @@ class GameState():
         moves = []
         for row in range(1, self.board.num_rows + 1):
             for col in range(1, self.board.num_cols + 1):
-                move = Move.play(Point(row=row, col=col))
+                move = Move.play(Point(row, col))
                 if self.is_valid_move(move):
                     moves.append(move)
         moves.append(Move.pass_turn())
         moves.append(Move.resign())
+
         return moves
 
     def winner(self) -> Union[Player, None]:
