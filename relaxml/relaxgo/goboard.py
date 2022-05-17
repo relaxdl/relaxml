@@ -211,7 +211,7 @@ class Board:
 
     def _replace_string(self, new_string: GoString) -> None:
         """
-        更新围棋棋盘网格
+        更新围棋棋盘grid
         """
         for point in new_string.stones:
             self._grid[point] = new_string
@@ -294,6 +294,8 @@ class GameState:
         self.board = board
         self.next_player = next_player  # 下一回合的执子方
         self.previous_state = previous  # 上一回合的游戏状态, 刚创建的游戏时, 这个这个字段为None
+        # previous_states 所有历史状态的set:
+        # set of (next_player, board.zobrist_hash)
         if self.previous_state is None:
             self.previous_states = frozenset()
         else:

@@ -8,7 +8,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from relaxgo.agent.naive import RandomBot
 from relaxgo import goboard_slow
-
+from relaxgo import goboard
+from relaxgo import goboard_fast
 from relaxgo.gotypes import Player
 from relaxgo.utils import print_board, print_move, clear_screen, point_from_coords
 """
@@ -24,7 +25,7 @@ def cli():
 @cli.command()
 @click.option('--board',
               default='slow',
-              type=click.Choice(['slow']),
+              type=click.Choice(['slow', 'normal', 'fast']),
               help='board模式')
 def run(board):
     """
@@ -33,6 +34,10 @@ def run(board):
     board_size = 9
     if board == 'slow':
         game = goboard_slow.GameState.new_game(board_size)
+    elif board == 'normal':
+        game = goboard.GameState.new_game(board_size)
+    elif board == 'fast':
+        game = goboard_fast.GameState.new_game(board_size)
     # 构造一个随机机器人
     bot = RandomBot()
     while not game.is_over():

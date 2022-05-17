@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from relaxgo.gotypes import Player, Point
 
 MAX63 = 0x7fffffffffffffff
+
 """
 zobrist哈希
 
@@ -31,6 +32,53 @@ zobrist哈希应当由2x19x19=722个哈希值组成. 我们可以用这722个哈
 吃掉棋盘上C3处的黑子, 可以应用C3的哈希值, 将它从当前棋盘状态对应的哈希值中移除. 这么做的话, 还必
 须把吃掉C3处黑子的白子的哈希值也应用到棋盘上, 如果白方一次落子吃掉多颗黑子, 则需要将它们的哈希值全
 部都逆应用到棋盘上
+
+>>> point11 = zobrist.HASH_CODE[Point(row=1, col=1), Player.black]
+>>> point42 = zobrist.HASH_CODE[Point(row=4, col=2), Player.white]
+>>> point53 = zobrist.HASH_CODE[Point(row=5, col=3), Player.white]
+>>> state = zobrist.EMPTY_BOARD  # 使用zobrist哈希来跟踪棋盘状态ss
+>>> state0 = state
+>>> print(state)
+    0
+
+# 在point11位置下一个子
+>>> state ^= point11
+>>> state1 = state
+>>> print(state)
+6864675399433918332
+
+# 在point42位置下一个子
+>>> state ^= point42
+>>> state2 = state
+>>> print(state)
+    447523812807278766
+
+# 在point53位置下一个子
+>>> state ^= point53
+>>> state3 = state
+>>> print(state)
+    6050482845057411844
+
+# 在point53位置的子提掉
+>>> state ^= point53
+>>> state4 = state
+>>> assert state4 == state2
+>>> print(state)
+    447523812807278766
+
+# 在point42位置的子提掉
+>>> state ^= point42
+>>> state5 = state
+>>> assert state5 == state1
+>>> print(state)
+    6864675399433918332
+
+# 把point11位置的子提掉
+>>> state ^= point11
+>>> state6 = state
+>>> assert state6 == state0
+>>> print(state)
+    0
 """
 
 

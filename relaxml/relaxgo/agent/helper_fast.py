@@ -1,9 +1,8 @@
 # -*- coding:utf-8 -*-
+
 from ..gotypes import Point, Player
 
-__all__ = [
-    'is_point_an_eye',
-]
+__all__ = ['is_point_an_eye']
 
 
 def is_point_an_eye(board, point: Point, color: Player) -> bool:
@@ -46,11 +45,10 @@ def is_point_an_eye(board, point: Point, color: Player) -> bool:
         return False
 
     # 所有相邻的点必须是己方棋子
-    for neighbor in point.neighbors():
-        if board.is_on_grid(neighbor):
-            neighbor_color = board.get(neighbor)
-            if neighbor_color != color:
-                return False
+    for neighbor in board.neighbors(point):
+        neighbor_color = board.get(neighbor)
+        if neighbor_color != color:
+            return False
 
     # 如果这个空点位于棋盘内部, 己方棋子至少得控制4个对角相邻点中的3个
     # 如果空点在边缘, 则必须控制所有的对角相邻点
