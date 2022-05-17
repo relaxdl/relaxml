@@ -58,7 +58,7 @@ alpha-beta剪枝`. 这两项技术共同构成了经典的棋盘游戏AI的支�
 """
 
 
-def capture_diff(game_state) -> int:
+def capture_diff(game_state: Any) -> int:
     """
     站在下一回合的执子方, 也就是game_state.next_player的角度, 评估当前game_state的函数(eval_fn)
     计算棋盘上黑子和白子的数量差, 这和计算双方提子数量差是一致的, 除非某一方提前跳过回合

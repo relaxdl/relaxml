@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from relaxgo.ttt.ttttypes import Player, Point
 from relaxgo.ttt.tttboard import GameState, Move, Board
-from relaxgo.minimax.minmax import MiniMaxAgent
+from relaxgo.minimax.minimax import MiniMaxAgent
 """
 井字棋人机对战
 """
