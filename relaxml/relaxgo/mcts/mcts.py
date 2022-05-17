@@ -105,7 +105,7 @@ class MCTSNode:
 
     def add_random_child(self) -> Any:
         """
-        向树中添加新的子节点, 返回新添加的: MCTSNode
+        向当前MCTSNode添加新的子节点, 返回新添加的: MCTSNode
 
         1. 选择一个合法的Move
         2. Apply这个Move生成一个新的GameState
@@ -163,31 +163,31 @@ class MCTSAgent(Agent):
         用当前的游戏状态作为根节点来创建一颗新的搜索树, 接着反复生成新的推演. 我们每一回合使用固定
         轮数的推演, 有的其它实现按照固定时长
 
-        <1> 每一轮开始推演, 先沿着搜索树往下遍历, 直至找到一个可以添加子节点的节点(任何还留有尚未
+        <1> 每一轮开始推演, 先沿着搜索树往下遍历, 直至找到一个可以添加子节点的node(任何还留有尚未
         添加到树中的合法动作的棋局)为止. select_child负责挑选可供继续搜索的最佳分支
-        <2> 找到合适的节点后, 调用add_random_child来选择一个后续动作, 并将它添加到搜索树, 此时的
-        node是一个新创建的MCTSNode, 它还没有包含任何推演
-        <3> 调用simulate_random_game模拟玩一局游戏
-        <4> 最后需要为新创建的节点以及它的所有祖先节点更新获胜统计信息
+        <2> 找到合适的节点后, 调用add_random_child为这个节点添加一个子节点, 并将它添加到搜索树.
+            此时的node是一个新创建的MCTSNode, 它还没有包含任何推演
+        <3> 调用simulate_random_game在新添加的node上模拟玩一局游戏
+        <4> 为新创建的node节点以及它的所有祖先节点更新获胜统计信息
         """
         root = MCTSNode(game_state)
 
         for i in range(self.num_rounds):
             node = root
-            # <1> 每一轮开始推演, 先沿着搜索树往下遍历, 直至找到一个可以添加子节点的节点(任何还留有尚未
-            # 添加到树中的合法动作的棋局)为止. select_child负责挑选可供继续搜索的最佳分支
+            # <1> 每一轮开始推演, 先沿着搜索树往下遍历, 直至找到一个可以添加子节点的node(任何还留有尚未
+            #     添加到树中的合法动作的棋局)为止. select_child负责挑选可供继续搜索的最佳分支
             while (not node.can_add_child()) and (not node.is_terminal()):
                 node = self.select_child(node)
 
-            # <2> 找到合适的节点后, 调用add_random_child来选择一个后续动作, 并将它添加到搜索树, 此时的
-            # node是一个新创建的MCTSNode, 它还没有包含任何推演
+            # <2> 找到合适的节点后, 调用add_random_child为这个节点添加一个子节点, 并将它添加到搜索树.
+            #     此时的node是一个新创建的MCTSNode, 它还没有包含任何推演
             if node.can_add_child():
                 node = node.add_random_child()
 
-            # <3> 调用simulate_random_game模拟玩一局游戏
+            # <3> 调用simulate_random_game在新添加的node上模拟玩一局游戏
             winner = self.simulate_random_game(node.game_state)
 
-            # <4> 最后需要为新创建的节点以及它的所有祖先节点更新获胜统计信息
+            # <4> 为新创建的node节点以及它的所有祖先节点更新获胜统计信息
             while node is not None:
                 node.record_win(winner)
                 node = node.parent
