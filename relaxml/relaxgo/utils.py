@@ -1,4 +1,9 @@
 # -*- coding:utf-8 -*-
+import os
+import requests
+import hashlib
+import zipfile
+import tarfile
 import platform
 import subprocess
 import numpy as np
@@ -19,6 +24,68 @@ STONE_TO_CHAR = {
     Player.black: ' x ',
     Player.white: ' o ',
 }
+
+_DATA_HUB = dict()
+_DATA_HUB['features-40k'] = (
+    'f3f0bdb3dd8a5cc663ef56ca4c8e06032034531d',
+    'https://foxrelax.oss-cn-hangzhou.aliyuncs.com/ml/go/features-40k.npy')
+_DATA_HUB['labels-40k'] = (
+    'd959a562ef5189413a0d1b3525972e9c9dd2b598',
+    'https://foxrelax.oss-cn-hangzhou.aliyuncs.com/ml/go/labels-40k.npy')
+_DATA_HUB['kgs'] = (
+    '49fb4f6366e650efb446679586d22c3a3b3bd875',
+    'https://foxrelax.oss-cn-hangzhou.aliyuncs.com/ml/go/kgs.zip')
+_DATA_HUB['kgs.json'] = (
+    'fb838e1c844a4a67af2be1fa8e256483c7b2f967',
+    'https://foxrelax.oss-cn-hangzhou.aliyuncs.com/ml/go/kgs.json')
+
+
+def download(name: str, cache_dir: str = '../data') -> str:
+    """
+    下载数据
+    """
+    sha1_hash, url = _DATA_HUB[name]
+    fname = os.path.join(cache_dir, url.split('/ml/go/')[-1])
+    fdir = os.path.dirname(fname)
+    os.makedirs(fdir, exist_ok=True)
+    if os.path.exists(fname):
+        sha1 = hashlib.sha1()
+        with open(fname, 'rb') as f:
+            while True:
+                data = f.read(1048576)
+                if not data:
+                    break
+                sha1.update(data)
+        if sha1.hexdigest() == sha1_hash:
+            return fname
+    print(f'download {url} -> {fname}...')
+    r = requests.get(url, stream=True, verify=True)
+    with open(fname, 'wb') as f:
+        f.write(r.content)
+    print(f'download {fname} success!')
+    # e.g. ../data/file.zip
+    return fname
+
+
+def download_extract(name: str, cache_dir: str = '../data') -> str:
+    """
+    下载数据 & 解压
+    """
+    # 下载数据集
+    fname = download(name, cache_dir)
+
+    # 解压
+    base_dir = os.path.dirname(fname)
+    data_dir, ext = os.path.splitext(fname)
+    if ext == '.zip':
+        fp = zipfile.ZipFile(fname, 'r')
+    elif ext in ('.tar', '.gz'):
+        fp = tarfile.open(fname, 'r')
+    else:
+        assert False, 'Only zip/tar files can be extracted.'
+    fp.extractall(base_dir)
+    # e.g. ../data/file
+    return data_dir
 
 
 def print_move(player, move):
