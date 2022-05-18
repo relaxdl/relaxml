@@ -1,27 +1,55 @@
 import os
+from typing import List, Union, Tuple
+import glob
+import os.path
 import tarfile
 import gzip
-import glob
 import shutil
-from typing import List, Tuple
 import numpy as np
+import multiprocessing
+from os import sys
+
 from ..gosgf import Sgf_game
 from ..goboard_fast import Board, GameState, Move
 from ..gotypes import Player, Point
-from ..encoder.base import get_encoder_by_name
-
 from .index_processor import KGSIndex
 from .sampling import Sampler
+from .generator import DataGenerator
+from ..encoder.base import get_encoder_by_name
+
+
+def worker(jobinfo: List[Tuple]):
+    """
+    执行`GoDataProcessor.process_zip()`, 处理一个*.tar.gz文件及其对应的game_list
+    """
+    try:
+        clazz, encoder, zip_file, data_file_name, game_list = jobinfo
+        clazz(encoder=encoder).process_zip(zip_file, data_file_name, game_list)
+    except (KeyboardInterrupt, SystemExit):
+        raise Exception('>>> Exiting child process.')
 
 
 class GoDataProcessor:
     """
+    # 不使用generator, 数据一次性返回
     >>> processer = GoDataProcessor()
     >>> features, labels = processer.load_go_data('train', 200)
     >>> features.shape
         (24576, 1, 19, 19)
     >>> labels.shape
         (24576,)
+    
+    # 使用generator, 数据批量返回
+    >>> processer = GoDataProcessor()
+    >>> generator = processer.load_go_data('train', 200, use_generator=True)
+    >>> for features, labels in generator.generate(batch_size=128):
+    >>>     print(features.shape)
+    >>>     print(labels.shape)
+    >>>     break
+        (128, 1, 19, 19)
+        (128, )
+
+
     """
 
     def __init__(self,
@@ -32,24 +60,28 @@ class GoDataProcessor:
         encoder: 编码器的名字
         data_directory: 数据存放路径
         """
+        self.encoder_string = encoder
         self.encoder = get_encoder_by_name(encoder, 19)
         self.data_dir = data_directory
 
-    def load_go_data(self,
-                     data_type: str = 'train',
-                     num_samples: int = 1000) -> Tuple[np.ndarray, np.ndarray]:
-        """
+    def load_go_data(
+        self,
+        data_type: str = 'train',
+        num_samples: int = 1000,
+        use_generator: bool = False
+    ) -> Union[Tuple[np.ndarray, np.ndarray], DataGenerator]:
+        """    
         下载围棋棋谱, 加载, 采样, 处理, 返回
     
         参数:
         data_type: train | test
         num_samples: 棋局的数量(不是样本的数量)
+        use_generator: 是否返回DataGenerator
 
-        返回: (features, labels)
+        返回: (features, labels) | generator
         features: [n, num_planes, board_height, board_width]
         labels: [n, ]
         """
-
         # 下载数据
         # '../data/kgs' -> '../data'
         index = KGSIndex(data_directory=self.data_dir[:-4])
@@ -69,45 +101,15 @@ class GoDataProcessor:
         #  ('KGS-2005-19-13941-.tar.gz', 13444)]
         data = sampler.draw_data(data_type, num_samples)
 
-        zip_names = set()  # 保存data中所有的文件名*.tar.gz
+        # 并行的执行self.process_zip()处理*.tar.gz及其对应的game_list
 
-        # 按压缩文件名对所有采样出来的*.sgf文件索引进行分组
-        # indices_by_zip_name:
-        # {
-        #   'KGS-2013-19-13783-.tar.gz': [5696, 3746, 8279, ... ],
-        #   'KGS-2008-19-14002-.tar.gz': [10428, 7795, 1509, ...],
-        #   ...
-        # }
-        indices_by_zip_name = {}  # Dict[str, List[int]]
-        for filename, index in data:
-            zip_names.add(filename)
-            if filename not in indices_by_zip_name:
-                indices_by_zip_name[filename] = []
-            indices_by_zip_name[filename].append(index)
-
-        # 删除老的features & labels文件
-        base = self.data_dir + '/*_features_*.npy'
-        for feature_file in glob.glob(base):
-            os.remove(feature_file)
-        base = self.data_dir + '/*_labels_*.npy'
-        for label_file in glob.glob(base):
-            os.remove(label_file)
-
-        # 单独处理每个压缩文件: 遍历所有的*.tar.gz
-        for zip_name in zip_names:
-            base_name = zip_name.replace('.tar.gz', '')
-            data_file_name = base_name + data_type
-            # 处理一个*.tar.gz文件中的game_lists, 生成features & labels,
-            # 生成的features & labels会写入磁盘
-            # e.g.
-            # 'KGS-2013-19-13783-.tar.gz'
-            # 'KGS-2013-19-13783-train'
-            # [5696, 3746, 8279, ... ],
-            self.process_zip(zip_name, data_file_name,
-                             indices_by_zip_name[zip_name])
-
-        features_and_labels = self.consolidate_games(data_type, data)
-        return features_and_labels
+        self.map_to_workers(data_type, data)
+        if use_generator:
+            generator = DataGenerator(self.data_dir, data)
+            return generator
+        else:
+            features_and_labels = self.consolidate_games(data_type, data)
+            return features_and_labels
 
     def unzip_data(self, zip_file_name: str) -> str:
         """
@@ -180,7 +182,6 @@ class GoDataProcessor:
         # game_list对应的*.sgf中的样本总数
         total_examples = self.num_total_examples(zip_file, game_list,
                                                  name_list)
-
         # 初始化合理形状的特征和标签NumPy数组
         # shape [num_planes, board_height, board_width]
         shape = self.encoder.shape()
@@ -339,6 +340,78 @@ class GoDataProcessor:
             first_move_done = True
             game_state = GameState(go_board, Player.white, None, move)
         return game_state, first_move_done
+
+    def map_to_workers(self, data_type: str, samples: List[Tuple[str, int]]):
+        """
+        并行的处理samepls文件(并行执行self.process_zip)
+
+        参数:
+        data_type: train | test
+        samples:
+            [('KGS-2004-19-12106-.tar.gz', 7883),
+            ('KGS-2006-19-10388-.tar.gz', 10064),
+            ('KGS-2012-19-13665-.tar.gz', 8488),
+            ...
+            ('KGS-2009-19-18837-.tar.gz', 1993),
+            ('KGS-2005-19-13941-.tar.gz', 9562),
+            ('KGS-2003-19-7582-.tar.gz', 265),
+            ('KGS-2009-19-18837-.tar.gz', 9086),
+            ('KGS-2005-19-13941-.tar.gz', 13444)]
+        """
+        zip_names = set()  # 保存samples中所有的文件名*.tar.gz
+        # 按压缩文件名对所有采样出来的*.sgf文件索引进行分组
+        # indices_by_zip_name:
+        # {
+        #   'KGS-2013-19-13783-.tar.gz': [5696, 3746, 8279, ... ],
+        #   'KGS-2008-19-14002-.tar.gz': [10428, 7795, 1509, ...],
+        #   ...
+        # }
+        indices_by_zip_name = {}  # Dict[str, List[int]]
+        for filename, index in samples:
+            zip_names.add(filename)
+            if filename not in indices_by_zip_name:
+                indices_by_zip_name[filename] = []
+            indices_by_zip_name[filename].append(index)
+
+        # 删除老的features & labels文件
+        base = self.data_dir + '/*_features_*.npy'
+        for feature_file in glob.glob(base):
+            os.remove(feature_file)
+        base = self.data_dir + '/*_labels_*.npy'
+        for label_file in glob.glob(base):
+            os.remove(label_file)
+
+        # 需要并行处理的*.tar.gz文件
+        zips_to_process = []  # 并行的参数
+        for zip_name in zip_names:
+            base_name = zip_name.replace('.tar.gz', '')
+            data_file_name = base_name + data_type
+            # 处理一个*.tar.gz文件中的game_lists, 生成features & labels,
+            # 生成的features & labels会写入磁盘
+            # e.g.
+            # 'KGS-2013-19-13783-.tar.gz'
+            # 'KGS-2013-19-13783-train'
+            # [5696, 3746, 8279, ... ],
+            if not os.path.isfile(self.data_dir + '/' + data_file_name):
+                # 等价于:
+                # self.process_zip(zip_name, data_file_name, indices_by_zip_name[zip_name])
+                zips_to_process.append(
+                    (self.__class__, self.encoder_string, zip_name,
+                     data_file_name, indices_by_zip_name[zip_name]))
+
+        cores = multiprocessing.cpu_count()
+        # Bug Fix:
+        # ValueError: not enough values to unpack
+        if cores > len(zip_names):
+            cores = len(zip_names)
+        pool = multiprocessing.Pool(processes=cores)
+        p = pool.map_async(worker, zips_to_process)
+        try:
+            _ = p.get()
+        except KeyboardInterrupt:
+            pool.terminate()
+            pool.join()
+            sys.exit(-1)
 
     def num_total_examples(self, zip_file: tarfile.TarFile,
                            game_list: List[int], name_list: List[str]) -> int:
