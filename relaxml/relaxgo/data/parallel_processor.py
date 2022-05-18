@@ -102,10 +102,9 @@ class GoDataProcessor:
         data = sampler.draw_data(data_type, num_samples)
 
         # 并行的执行self.process_zip()处理*.tar.gz及其对应的game_list
-
         self.map_to_workers(data_type, data)
         if use_generator:
-            generator = DataGenerator(self.data_dir, data)
+            generator = DataGenerator(data_type, self.data_dir, data)
             return generator
         else:
             features_and_labels = self.consolidate_games(data_type, data)
@@ -374,10 +373,10 @@ class GoDataProcessor:
             indices_by_zip_name[filename].append(index)
 
         # 删除老的features & labels文件
-        base = self.data_dir + '/*_features_*.npy'
+        base = self.data_dir + f'/*{data_type}_features_*.npy'
         for feature_file in glob.glob(base):
             os.remove(feature_file)
-        base = self.data_dir + '/*_labels_*.npy'
+        base = self.data_dir + f'/*{data_type}_labels_*.npy'
         for label_file in glob.glob(base):
             os.remove(label_file)
 
@@ -408,6 +407,8 @@ class GoDataProcessor:
         p = pool.map_async(worker, zips_to_process)
         try:
             _ = p.get()
+            pool.close()
+            pool.join()
         except KeyboardInterrupt:
             pool.terminate()
             pool.join()

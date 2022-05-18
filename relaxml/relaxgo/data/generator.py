@@ -9,10 +9,12 @@ class DataGenerator:
     """
 
     def __init__(self,
+                 data_type: str = 'train',
                  data_directory: str = '../data/kgs',
                  samples: List[Tuple[str, int]] = []) -> None:
         """
         参数:
+        data_type: train | test
         data_directory: 数据存放路径
         samples: 样本
             e.g.
@@ -26,6 +28,7 @@ class DataGenerator:
              ('KGS-2009-19-18837-.tar.gz', 9086),
              ('KGS-2005-19-13941-.tar.gz', 13444)]
         """
+        self.data_type = data_type
         self.data_directory = data_directory
         self.samples = samples
         self.files = set(file_name for file_name, index in samples)
@@ -56,7 +59,7 @@ class DataGenerator:
         labels: [batch_size, ]
         """
         for zip_file_name in self.files:
-            file_name = zip_file_name.replace('.tar.gz', '') + 'train'
+            file_name = zip_file_name.replace('.tar.gz', '') + self.data_type
             base = self.data_directory + '/' + file_name + '_features_*.npy'
             for feature_file in glob.glob(base):
                 label_file = feature_file.replace('features', 'labels')

@@ -86,10 +86,10 @@ class GoDataProcessor:
             indices_by_zip_name[filename].append(index)
 
         # 删除老的features & labels文件
-        base = self.data_dir + '/*_features_*.npy'
+        base = self.data_dir + f'/*{data_type}_features_*.npy'
         for feature_file in glob.glob(base):
             os.remove(feature_file)
-        base = self.data_dir + '/*_labels_*.npy'
+        base = self.data_dir + f'/*{data_type}_labels_*.npy'
         for label_file in glob.glob(base):
             os.remove(label_file)
 
