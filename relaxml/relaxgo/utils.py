@@ -7,6 +7,9 @@ import tarfile
 import platform
 import subprocess
 import numpy as np
+import tempfile
+import h5py
+import tensorflow.keras as keras
 from .gotypes import Player, Point
 """
 围棋坐标可以用多种方式来指定, 但在欧洲最常见得方法是从A开始的字母表示列,
@@ -157,3 +160,69 @@ class MoveAge:
 
     def increment_all(self):
         self.move_ages[self.move_ages > -1] += 1
+
+
+def save_model_to_hdf5_group(model: keras.Model, h5file: h5py.Group) -> None:
+    """
+            h5file
+        /         \
+    encoder(group)  model[参数h5file]
+                         |
+                  kerasmodel(group)
+
+    1. 将keras model模型保存到一个临时文件中, 保存的格式是h5
+    2. 重新打开这个保存模型的h5文件, 将其内容copy到`h5file`的`kerasmodel`节点
+    """
+    tempfd, tempfname = tempfile.mkstemp(prefix='tmp-kerasmodel')
+    try:
+        os.close(tempfd)
+        # 1. 将keras model模型保存到一个临时文件中, 保存的格式是h5
+        keras.models.save_model(model, tempfname)
+
+        # 2. 重新打开这个保存模型的h5文件, 将其内容copy到`h5file`的`kerasmodel`节点
+        serialized_model = h5py.File(tempfname, 'r')
+        root_item = serialized_model.get('/')
+        serialized_model.copy(root_item, h5file, 'kerasmodel')
+        serialized_model.close()
+    finally:
+        os.unlink(tempfname)
+
+
+def load_model_from_hdf5_group(h5file: h5py.Group,
+                               custom_objects=None) -> keras.Model:
+    """
+            h5file
+        /         \
+    encoder(group)  model[参数h5file]
+                        |
+                kerasmodel(group)
+
+    1. 将模型的数据解压到临时文件中
+       a. 创建临时文件来保存模型
+       b. 将属性写入临时文件
+       c. 将属性写入临时文件
+    2. 从临时文件中加载模型
+    """
+    tempfd, tempfname = tempfile.mkstemp(prefix='tmp-kerasmodel')
+    try:
+        os.close(tempfd)
+        # 1. 将模型的数据解压到临时文件中
+
+        # a. 创建临时文件来保存模型
+        serialized_model = h5py.File(tempfname, 'w')
+        root_item = h5file.get('kerasmodel')
+
+        # b. 将属性写入临时文件
+        for attr_name, attr_value in root_item.attrs.items():
+            serialized_model.attrs[attr_name] = attr_value
+
+        # c. 遍历所有keys, 将其对应Node写入临时文件
+        for k in root_item.keys():
+            h5file.copy(root_item.get(k), serialized_model, k)
+        serialized_model.close()
+
+        # 2. 从临时文件加载模型
+        return keras.models.load_model(tempfname,
+                                       custom_objects=custom_objects)
+    finally:
+        os.unlink(tempfname)
