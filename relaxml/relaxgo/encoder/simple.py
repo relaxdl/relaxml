@@ -3,8 +3,6 @@ import numpy as np
 from ..encoder.base import Encoder
 from ..goboard import Move
 from ..gotypes import Player, Point
-
-
 """
 如果没有见过以往落子序列的情况,仅仅根据当前棋盘的状态是无法判断`劫争`的. 如果我们使用
 `OnePlaneEncoder`来编码棋盘, 只使用一个平面, 将黑子编码为-1, 白子编码为1, 空白编码为0. 
@@ -15,6 +13,7 @@ SimpleEncoder使用了11个平面, 除了对`劫争`进行显式的编码, 还�
 可以直接`看到`这个属性, 就能更容易的了解它对棋局的影响. 为劫争和气数单独创造特征平面, 实际上相当于
 给模型增加了提示, 强调了这些概念的重要性
 """
+
 
 class SimpleEncoder(Encoder):
     """
@@ -32,6 +31,8 @@ class SimpleEncoder(Encoder):
     """
 
     def __init__(self, board_size: Union[Tuple[int, int], int]) -> None:
+        if isinstance(board_size, int):
+            board_size = (board_size, board_size)
         self.board_width, self.board_height = board_size
         self.num_planes = 11
 

@@ -24,11 +24,11 @@ def network(input_shape, num_classes):
     return model
 
 
-def load_data(num_train_games=2000, num_test_games=200):
+def load_data(num_train_games=100, num_test_games=100):
     go_board_rows, go_board_cols = 19, 19
     num_classes = go_board_rows * go_board_cols
     encoder = SimpleEncoder((go_board_rows, go_board_cols))
-    input_shape = (encoder.num_planes, go_board_rows, go_board_cols)
+    input_shape = encoder.shape()
     processor = GoDataProcessor(encoder=encoder.name())
     generator = processor.load_go_data('train',
                                        num_train_games,
@@ -45,7 +45,7 @@ def load_data(num_train_games=2000, num_test_games=200):
 
 
 if __name__ == '__main__':
-    epochs, num_train_games, num_test_games, batch_size = 10, 200, 200, 256
+    epochs, num_train_games, num_test_games, batch_size = 50, 100, 100, 128
     generator, test_generator, num_classes, input_shape = load_data(
         num_train_games, num_test_games)
     model = network(input_shape, num_classes)

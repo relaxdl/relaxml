@@ -16,12 +16,12 @@ class ExperienceCollector:
     """
 
     def __init__(self):
-        # 总的
+        # 多组数据, 可以跨越多个episode
         self.states = []
         self.actions = []
         self.rewards = []
         self.advantages = []
-        # 一个episode的
+        # 一个episode的数据, 每个episode会重置
         self._current_episode_states = []
         self._current_episode_actions = []
         self._current_episode_estimated_values = []
@@ -52,7 +52,7 @@ class ExperienceCollector:
 
     def complete_episode(self, reward: int) -> None:
         """
-        一个episode开始, 将这个episode的经验合并到总经验buffer上【一局游戏结束调用】
+        一个episode结束, 将这个episode的经验合并到总经验buffer上【一局游戏结束调用】
         """
         num_states = len(self._current_episode_states)
         self.states += self._current_episode_states
@@ -61,6 +61,7 @@ class ExperienceCollector:
 
         for i in range(num_states):
             # 计算这一个episode的`优势`
+            # U - V
             advantage = reward - self._current_episode_estimated_values[i]
             self.advantages.append(advantage)
 

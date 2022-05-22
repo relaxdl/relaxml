@@ -16,6 +16,8 @@ class SevenPlaneEncoder(Encoder):
     """
 
     def __init__(self, board_size: Union[Tuple[int, int], int]) -> None:
+        if isinstance(board_size, int):
+            board_size = (board_size, board_size)
         self.board_width, self.board_height = board_size
         self.num_planes = 7
 
